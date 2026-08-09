@@ -1,0 +1,539 @@
+// ═══════════════════════════════════════════════════════════
+//  {{EVENT_NAME}} — Code.gs（router ＋ 後端 API）
+//  三頁：index / report / lookup / close。常數用 Scriptlet 注入（勿硬寫）。
+//  新增／查詢／更新一律由 GAS 用 UrlFetchApp 直打 Notion API（不經 n8n）。
+//  Notion token 與 DB ID 只放 Secrets.gs（notionToken_/notionDbId_），
+//  絕不注入任何前端頁面。
+// ═══════════════════════════════════════════════════════════
+
+function doGet(e) {
+  var page = (e && e.parameter && e.parameter.page) ? e.parameter.page : '';
+
+  if (page === 'report') return render_('report', CONFIG.REPORT_TITLE);
+  if (page === 'lookup') return render_('lookup', CONFIG.EVENT_NAME + ' 報名查詢');
+
+  // ?page=close 強制結束頁；無參數時 CLOSED=true 也導到結束頁；?page=form 強制報名表
+  var showClose = (page === 'close') || (page !== 'form' && CONFIG.CLOSED);
+  if (showClose) return render_('close', CONFIG.PAGE_TITLE + ' 圓滿感謝');
+
+  return render_('index', CONFIG.PAGE_TITLE);
+}
+
+// createTemplateFromFile().evaluate() 才會處理 <?!= ... ?> 注入
+function render_(file, title) {
+  return HtmlService.createTemplateFromFile(file).evaluate()
+    .setTitle(title)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+// ── Notion 直打底層 ─────────────────────────────────────────
+// token 與 DB ID 來自 Secrets.gs，前端拿不到。
+function notionApi_(method, path, body) {
+  try {
+    var opt = {
+      method: method,
+      headers: { 'Authorization': 'Bearer ' + notionToken_(), 'Notion-Version': NOTION_VERSION },
+      muteHttpExceptions: true
+    };
+    if (body != null) {
+      opt.contentType = 'application/json';
+      opt.payload = JSON.stringify(body);
+    }
+    var res = UrlFetchApp.fetch('https://api.notion.com/v1' + path, opt);
+    var code = res.getResponseCode();
+    var text = res.getContentText() || '';
+    var data = {};
+    try { data = JSON.parse(text || '{}'); } catch (ignore) {}
+    if (code >= 200 && code < 300) return { ok: true, data: data };
+    return { ok: false, error: 'Notion API ' + code + '：' + (data.message || text.slice(0, 300) || '未知錯誤') };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
+
+// 查全部（自動翻頁）→ { ok, pages:[原始 Notion page 物件] }
+function notionQueryAll_() {
+  var dbId = notionDbId_();
+  if (!dbId) return { ok: false, error: '缺 Notion DB ID（請在 Secrets.gs 或 Script Properties 設定）' };
+  var pages = [], cursor = null, guard = 0;
+  do {
+    var body = { page_size: 100 };
+    if (cursor) body.start_cursor = cursor;
+    var res = notionApi_('post', '/databases/' + dbId + '/query', body);
+    if (!res.ok) return res;
+    var data = res.data || {};
+    (data.results || []).forEach(function (p) { pages.push(p); });
+    cursor = data.has_more ? data.next_cursor : null;
+    guard++;
+  } while (cursor && guard < 200);
+  return { ok: true, pages: pages };
+}
+
+// 固定文字欄／數字欄／submit 用的 select 欄（依 CONFIG 動態組）
+function fixedTxtFields_() {
+  var t = ['地址', '匯款日期', '帳號後五碼', '備註', '報名編號'];
+  if (CONFIG.REGISTRATION_MODE === 'family') t = t.concat(['聯絡人', '家庭編號']);
+  return t;
+}
+function numFields_() {
+  return (CONFIG.QTY_ITEMS || []).map(function (it) { return it.id; }).concat(['匯款金額', '總金額']);
+}
+function submitSelFields_() {
+  return CONFIG.GROUP_FIELD ? [CONFIG.GROUP_FIELD, '繳款方式'] : ['繳款方式'];
+}
+
+// 原始 Notion pages → 前端用的扁平列（等同舊 n8n report 節點輸出）
+function formatRows_(pages) {
+  var NUM = numFields_();
+  var TXT = fixedTxtFields_();
+  var SEL = (CONFIG.GROUP_FIELD ? [CONFIG.GROUP_FIELD] : []).concat(['繳款方式', '繳費狀況']);
+  var CUSTOM = CONFIG.CUSTOM_FIELDS || [];
+  var rows = (pages || []).filter(function (p) { return p && p.id && p.properties; }).map(function (p) {
+    var P = p.properties;
+    var r = {
+      pageId: p.id,
+      '功德主': gTitle_(P['功德主']),
+      '電話': gPhone_(P['電話']),
+      '報名時間': gDate_(P['報名時間']),
+      '稽核': gChk_(P['稽核']),
+      '確認匯款?': gChk_(P['確認匯款?']),
+      '個資同意': gChk_(P['個資同意'])
+    };
+    NUM.forEach(function (f) { r[f] = gNum_(P[f]); });
+    TXT.forEach(function (f) { r[f] = gText_(P[f]); });
+    SEL.forEach(function (f) { r[f] = gSel_(P[f]); });
+    CUSTOM.forEach(function (f) {
+      r[f.name] = f.type === 'select' ? gSel_(P[f.name]) :
+        (f.type === 'checkbox' ? gChk_(P[f.name]) :
+        (f.type === 'date' ? gDate_(P[f.name]) : gText_(P[f.name])));
+    });
+    return r;
+  });
+  rows.sort(function (a, b) { return String(b['報名時間'] || '').localeCompare(String(a['報名時間'] || '')); });
+  return rows;
+}
+
+// 查全部並格式化 → { ok, data:[扁平列] }
+function loadAllRows_() {
+  var q = notionQueryAll_();
+  if (!q.ok) return q;
+  return { ok: true, data: formatRows_(q.pages) };
+}
+
+function genRand_() { return Math.random().toString(36).slice(2, 8).toUpperCase(); }
+
+// ── 後台登入 ────────────────────────────────────────────────
+// 後台密碼只留在 GAS 伺服器端，絕不注入 report.html。
+function reportLoginApi(password) {
+  return { ok: String(password || '') === CONFIG.REPORT_PASSWORD };
+}
+
+// ── 後台讀取全部 ────────────────────────────────────────────
+function reportLoadApi(password) {
+  if (String(password || '') !== CONFIG.REPORT_PASSWORD) return { ok: false, error: '未授權' };
+  return loadAllRows_();
+}
+
+// ── 前台送出報名（新增，取代舊的瀏覽器直打 n8n）───────────────
+function submitApi(payload) {
+  var lock = null;
+  try {
+    payload = payload || {};
+    if (CONFIG.CLOSED) return { ok: false, error: '報名已截止' };
+    var MODE = CONFIG.REGISTRATION_MODE === 'family' ? 'family' : 'single';
+    var items = CONFIG.QTY_ITEMS || [];
+    var custom = CONFIG.CUSTOM_FIELDS || [];
+    var payOptions = CONFIG.PAY_OPTIONS || [];
+    var groupField = CONFIG.GROUP_FIELD || '';
+    var groupOptions = CONFIG.GROUP_OPTIONS || [];
+
+    var contact = cleanText_(MODE === 'family' ? payload['聯絡人'] : payload['功德主'], MODE === 'family' ? '聯絡人' : '功德主', APP_LIMITS.NAME, true);
+    var phone = cleanPhone_(payload['電話']);
+    var pay = String(payload['繳款方式'] || '').trim();
+    if (payOptions.indexOf(pay) < 0) return { ok: false, error: '繳款方式不正確' };
+    if (!chkTrue(payload['個資同意'])) return { ok: false, error: '缺個資同意' };
+    if (groupField && payload[groupField] && groupOptions.indexOf(String(payload[groupField])) < 0) return { ok: false, error: '所屬單位不正確' };
+    payload['電話'] = phone;
+    payload['地址'] = cleanText_(payload['地址'], '地址', APP_LIMITS.ADDRESS, false);
+    payload['備註'] = cleanText_(payload['備註'], '備註', APP_LIMITS.NOTE, false);
+    if (MODE === 'family') payload['聯絡人'] = contact;
+    else payload['功德主'] = contact;
+
+    var people = MODE === 'family' ? payload['功德主清單'] : [payload];
+    if (!Array.isArray(people) || people.length < 1) return { ok: false, error: '至少要有一位功德主' };
+    if (people.length > 50) return { ok: false, error: '單次最多 50 位功德主' };
+
+    var normalized = [];
+    var grandTotal = 0;
+    for (var i = 0; i < people.length; i++) {
+      var person = people[i] || {};
+      var name = cleanText_(person['功德主'], '第 ' + (i + 1) + ' 位功德主姓名', APP_LIMITS.NAME, true);
+      person['功德主'] = name;
+      var subtotal = 0, selected = false;
+      for (var j = 0; j < items.length; j++) {
+        var it = items[j], v;
+        if (it.pricingMode === 'fixed' || it.pricingMode === 'free') {
+          v = safeInteger_(person[it.id], it.id + '數量', APP_LIMITS.ITEM_QTY);
+          if (v > 0) selected = true;
+          subtotal += it.pricingMode === 'fixed' ? v * Number(it.price || 0) : 0;
+        } else {
+          v = safeMoney_(person[it.id], it.id + '金額', true);
+          if (v > 0) selected = true;
+          if (it.pricingMode === 'minimum' && v > 0 && v < Number(it.minAmount || 0)) return { ok: false, error: it.id + ' 最低金額為 ' + it.minAmount };
+          subtotal += v;
+        }
+        person[it.id] = v;
+        assertSafeTotal_(subtotal);
+      }
+      if (!selected) return { ok: false, error: name + ' 至少要選擇一個品項' };
+      grandTotal += subtotal;
+      assertSafeTotal_(grandTotal);
+      normalized.push({ person: person, name: name, subtotal: subtotal });
+    }
+
+    // 自訂欄位驗證（依連動品項是否顯示）
+    for (var c = 0; c < custom.length; c++) {
+      var f = custom[c];
+      var visible = !f.showWhenItem || normalized.some(function (e) { return Number(e.person[f.showWhenItem]) > 0; });
+      var cv = payload[f.name];
+      if (f.type === 'checkbox') {
+        cv = chkTrue(cv);
+        if (visible && f.required && !cv) return { ok: false, error: '必填欄位未填：' + f.name };
+      } else if (f.type === 'select') {
+        cv = cleanText_(cv, f.name, 100, visible && f.required);
+        if (cv && f.options.indexOf(cv) < 0) return { ok: false, error: '選項不正確：' + f.name };
+      } else if (f.type === 'date') {
+        cv = cleanDate_(cv, f.name, visible && f.required);
+      } else {
+        cv = cleanText_(cv, f.name, APP_LIMITS.CUSTOM_TEXT, visible && f.required);
+      }
+      payload[f.name] = visible ? cv : (f.type === 'checkbox' ? false : '');
+    }
+
+    // 匯款三欄驗證；非匯款一律清空，與後台修改行為一致
+    if (pay === '匯款') {
+      var last5 = String(payload['帳號後五碼'] || '');
+      var amt = safeMoney_(payload['匯款金額'], '匯款金額', false);
+      payload['匯款日期'] = cleanRemitDate_(payload['匯款日期'], true);
+      if (!/^\d{5}$/.test(last5)) return { ok: false, error: '帳號後五碼必須是 5 位數' };
+      payload['帳號後五碼'] = last5;
+      payload['匯款金額'] = amt;
+    } else {
+      payload['匯款日期'] = ''; payload['帳號後五碼'] = ''; payload['匯款金額'] = 0;
+    }
+
+    // 鎖住「查重複／查名額／寫入」完整交易區段，避免併發請求同時通過檢查而超賣。
+    lock = acquireCapacityLock_();
+    var existing = notionQueryAll_();
+    if (!existing.ok) return existing;
+    var pages = existing.pages;
+    for (var d = 0; d < normalized.length; d++) {
+      var dupName = normalized[d].name;
+      var dup = pages.some(function (p) {
+        var P = p.properties || {};
+        var title = (P['功德主'] && P['功德主'].title && P['功德主'].title[0]) ? P['功德主'].title[0].plain_text : '';
+        var ph = (P['電話'] && P['電話'].phone_number) ? P['電話'].phone_number : '';
+        return normalizePhone_(ph) === phone && String(title).trim() === dupName;
+      });
+      if (dup) return { ok: false, error: '疑似重複報名：' + dupName + '（相同電話）' };
+    }
+    var cap = CONFIG.CAPACITY || { total: 0, items: {} };
+    if (Number(cap.total || 0) > 0 && pages.length + normalized.length > Number(cap.total)) return { ok: false, error: '活動名額已滿或剩餘名額不足' };
+    for (var k = 0; k < items.length; k++) {
+      var lit = items[k], limit = Number((cap.items || {})[lit.id] || 0);
+      if (limit <= 0) continue;
+      var used = pages.reduce(function (s, p) { var x = p.properties[lit.id]; return s + ((x && typeof x.number === 'number') ? x.number : 0); }, 0);
+      var incoming = normalized.reduce(function (s, e) { return s + (Number(e.person[lit.id]) || 0); }, 0);
+      if (used + incoming > limit) return { ok: false, error: lit.id + ' 剩餘數量不足' };
+    }
+
+    // 建立頁面
+    var submittedAt = new Date().toISOString();
+    var registrationId = 'R-' + submittedAt.replace(/\D/g, '').slice(0, 14) + '-' + genRand_();
+    var familyId = MODE === 'family' ? ('F-' + submittedAt.replace(/\D/g, '').slice(0, 14) + '-' + genRand_()) : '';
+    var ctx = { phone: phone, MODE: MODE, contact: contact, registrationId: registrationId, familyId: familyId, submittedAt: submittedAt };
+    for (var n = 0; n < normalized.length; n++) {
+      if (n > 0) Utilities.sleep(350);   // 家庭模式多筆連續寫入，避開 Notion 429 rate limit
+      var props = buildSubmitProperties_(payload, normalized[n], ctx);
+      var created = notionApi_('post', '/pages', { parent: { database_id: notionDbId_() }, properties: props });
+      if (!created.ok) return { ok: false, error: '寫入失敗：' + created.error };
+    }
+    return { ok: true, count: normalized.length, registrationId: registrationId };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message ? err.message : err) };
+  } finally {
+    releaseLock_(lock);
+  }
+}
+
+// 依單一功德主組出 Notion properties（submit 用）
+function buildSubmitProperties_(payload, entry, ctx) {
+  var row = {};
+  Object.keys(payload).forEach(function (k) { row[k] = payload[k]; });
+  Object.keys(entry.person).forEach(function (k) { row[k] = entry.person[k]; });
+  row['功德主'] = entry.name;
+  row['電話'] = ctx.phone;
+  row['總金額'] = entry.subtotal;
+  row['報名編號'] = ctx.registrationId;
+  if (ctx.MODE === 'family') { row['聯絡人'] = ctx.contact; row['家庭編號'] = ctx.familyId; }
+
+  var props = {
+    '功德主': { title: [{ text: { content: entry.name } }] },
+    '電話': pPhone_(ctx.phone),
+    '繳費狀況': { select: { name: '未處理' } },
+    '稽核': { checkbox: false },
+    '個資同意': { checkbox: chkTrue(payload['個資同意']) },
+    '確認匯款?': { checkbox: false }
+  };
+  numFields_().forEach(function (f) { props[f] = pNum_(row[f]); });
+  fixedTxtFields_().forEach(function (f) { props[f] = pTxt_(row[f]); });
+  submitSelFields_().forEach(function (f) { var s = pSel_(row[f]); if (s) props[f] = s; });
+  (CONFIG.CUSTOM_FIELDS || []).forEach(function (f) {
+    var v = row[f.name];
+    if (f.type === 'select') { var s = pSel_(v); if (s) props[f.name] = s; }
+    else if (f.type === 'checkbox') props[f.name] = pChk_(v);
+    else if (f.type === 'date') props[f.name] = pDate_(v);
+    else props[f.name] = pTxt_(v);
+  });
+  props['報名時間'] = { date: { start: ctx.submittedAt } };
+  return props;
+}
+
+// ── 前台只取剩餘名額，不回傳任何報名者資料 ────────────────────
+function capacityLoadApi() {
+  var cap = CONFIG.CAPACITY || { total: 0, items: {} };
+  var hasLimit = Number(cap.total || 0) > 0;
+  Object.keys(cap.items || {}).forEach(function (k) { if (Number(cap.items[k] || 0) > 0) hasLimit = true; });
+  if (!hasLimit) return { ok: true, totalRemaining: null, itemRemaining: {} };
+  var loaded = loadAllRows_();
+  if (!loaded.ok) return loaded;
+  var rows = loaded.data || [];
+  var itemRemaining = {};
+  (CONFIG.QTY_ITEMS || []).forEach(function (it) {
+    var limit = Number((cap.items || {})[it.id] || 0);
+    if (limit > 0) {
+      var used = rows.reduce(function (s, r) { return s + (Number(r[it.id]) || 0); }, 0);
+      itemRemaining[it.id] = Math.max(0, limit - used);
+    }
+  });
+  return {
+    ok: true,
+    totalRemaining: Number(cap.total || 0) > 0 ? Math.max(0, Number(cap.total) - rows.length) : null,
+    itemRemaining: itemRemaining
+  };
+}
+
+// ── 信眾自助查詢／修改 ──────────────────────────────────────
+function publicLookupApi(registrationId, phone) {
+  registrationId = String(registrationId || '').trim();
+  phone = normalizePhone_(phone);
+  if (!/^R-[A-Z0-9-]+$/i.test(registrationId) || phone.length < 8 || phone.length > 15) return { ok: false, error: '報名編號或電話格式不正確' };
+  var loaded = loadAllRows_();
+  if (!loaded.ok) return loaded;
+  var rows = (loaded.data || []).filter(function (r) { return String(r['報名編號'] || '') === registrationId && normalizePhone_(r['電話']) === phone; });
+  if (!rows.length) return { ok: false, error: '查無資料，請確認報名編號與電話' };
+  return { ok: true, data: rows, closed: !!CONFIG.CLOSED };
+}
+
+function publicUpdateApi(registrationId, phone, payload) {
+  var lock = null;
+  try {
+    if (CONFIG.CLOSED) return { ok: false, error: '報名已截止，無法自行修改' };
+    lock = acquireCapacityLock_();
+    var found = publicLookupApi(registrationId, phone);
+    if (!found.ok) return found;
+    phone = cleanPhone_(phone);
+    payload = payload || {};
+    var rows = found.data || [], ids = rows.map(function (r) { return r.pageId; });
+    var people = Array.isArray(payload.people) ? payload.people : [];
+    if (people.length !== rows.length) return { ok: false, error: '功德主筆數不一致，請重新查詢' };
+    var submittedIds = [];
+    for (var p = 0; p < people.length; p++) {
+      var submittedId = String(people[p].pageId || '');
+      if (ids.indexOf(submittedId) < 0 || submittedIds.indexOf(submittedId) >= 0) return { ok: false, error: '功德主資料不一致，請重新查詢' };
+      submittedIds.push(submittedId);
+      people[p]['功德主'] = cleanText_(people[p]['功德主'], '功德主', APP_LIMITS.NAME, true);
+      var selected = false, subtotal = 0;
+      for (var q = 0; q < (CONFIG.QTY_ITEMS || []).length; q++) {
+        var item = CONFIG.QTY_ITEMS[q], value;
+        if (item.pricingMode === 'fixed' || item.pricingMode === 'free') value = safeInteger_(people[p][item.id], item.id + '數量', APP_LIMITS.ITEM_QTY);
+        else value = safeMoney_(people[p][item.id], item.id + '金額', true);
+        people[p][item.id] = value;
+        if (value > 0) selected = true;
+        if (item.pricingMode === 'minimum' && value > 0 && value < Number(item.minAmount || 0)) return { ok: false, error: item.id + ' 未達最低金額' };
+        subtotal += (!item.pricingMode || item.pricingMode === 'fixed') ? value * Number(item.price || 0) :
+          ((item.pricingMode === 'donation' || item.pricingMode === 'minimum') ? value : 0);
+        assertSafeTotal_(subtotal);
+      }
+      if (!selected) return { ok: false, error: String(people[p]['功德主']) + ' 至少要選擇一個品項' };
+    }
+    if (ids.some(function (id) { return submittedIds.indexOf(id) < 0; })) return { ok: false, error: '功德主資料不一致，請重新查詢' };
+    var allLoaded = loadAllRows_();
+    if (!allLoaded.ok) return allLoaded;
+    var others = (allLoaded.data || []).filter(function (r) { return ids.indexOf(r.pageId) < 0; });
+    for (var dd = 0; dd < people.length; dd++) {
+      var duplicate = others.some(function (r) { return normalizePhone_(r['電話']) === phone && String(r['功德主'] || '').trim() === String(people[dd]['功德主'] || '').trim(); });
+      if (duplicate) return { ok: false, error: '疑似重複報名：' + people[dd]['功德主'] + '（相同電話）' };
+    }
+    var capItems = CONFIG.QTY_ITEMS || [];
+    for (var ci = 0; ci < capItems.length; ci++) {
+      var capIt = capItems[ci];
+      var capLimit = Number(((CONFIG.CAPACITY || {}).items || {})[capIt.id] || 0);
+      if (capLimit <= 0) continue;
+      var capUsed = others.reduce(function (s, r) { return s + (Number(r[capIt.id]) || 0); }, 0);
+      var capIncoming = people.reduce(function (s, r) { return s + (Number(r[capIt.id]) || 0); }, 0);
+      if (capUsed + capIncoming > capLimit) return { ok: false, error: capIt.id + ' 剩餘數量不足' };
+    }
+    var sharedAllowed = ['地址', '繳款方式', '匯款日期', '帳號後五碼', '匯款金額', '備註'];
+    if (CONFIG.REGISTRATION_MODE === 'family') sharedAllowed.push('聯絡人');
+    if (CONFIG.GROUP_FIELD) sharedAllowed.push(CONFIG.GROUP_FIELD);
+    (CONFIG.CUSTOM_FIELDS || []).forEach(function (f) { sharedAllowed.push(f.name); });
+    var shared = {};
+    Object.keys(payload.shared || {}).forEach(function (k) { if (sharedAllowed.indexOf(k) >= 0) shared[k] = payload.shared[k]; });
+    for (var cc = 0; cc < (CONFIG.CUSTOM_FIELDS || []).length; cc++) {
+      var cf = CONFIG.CUSTOM_FIELDS[cc], vis = !cf.showWhenItem || people.some(function (person) { return Number(person[cf.showWhenItem] || 0) > 0; }), val = shared[cf.name];
+      if (vis && cf.required && (cf.type === 'checkbox' ? !chkTrue(val) : !String(val || '').trim())) return { ok: false, error: '必填欄位未填：' + cf.name };
+      if (vis && cf.type === 'select' && val && cf.options.indexOf(val) < 0) return { ok: false, error: '選項不正確：' + cf.name };
+    }
+    var sharedResult = reportUpdateApi(CONFIG.REPORT_PASSWORD, ids[0], shared, ids);
+    if (!sharedResult.ok) return sharedResult;
+    for (var w = 0; w < people.length; w++) {
+      var fields = { '功德主': people[w]['功德主'] };
+      (CONFIG.QTY_ITEMS || []).forEach(function (it) { fields[it.id] = people[w][it.id]; });
+      var updated = reportUpdateApi(CONFIG.REPORT_PASSWORD, people[w].pageId, fields);
+      if (!updated.ok) return updated;
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message ? err.message : err) };
+  } finally {
+    releaseLock_(lock);
+  }
+}
+
+// ── 更新（後台編輯 Modal 與信眾自助共用）────────────────────
+function reportUpdateApi(password, pageId, fields, pageIds) {
+  if (String(password || '') !== CONFIG.REPORT_PASSWORD) return { ok: false, error: '未授權' };
+  pageId = String(pageId || '');
+  if (!/^(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/.test(pageId)) return { ok: false, error: 'pageId 格式不正確' };
+  fields = fields || {};
+  var allowed = ['功德主', '電話', '地址', '繳款方式', '匯款日期', '帳號後五碼', '匯款金額', '備註',
+    '繳費狀況', '確認匯款?', '稽核', '個資同意'];
+  if (CONFIG.REGISTRATION_MODE === 'family') allowed.push('聯絡人');
+  (CONFIG.CUSTOM_FIELDS || []).forEach(function (f) { allowed.push(f.name); });
+  if (CONFIG.GROUP_FIELD) allowed.push(CONFIG.GROUP_FIELD);
+  (CONFIG.QTY_ITEMS || []).forEach(function (it) { allowed.push(it.id); });
+  var clean = { pageId: pageId };
+  var targetIds = [pageId];
+  if (CONFIG.REGISTRATION_MODE === 'family' && Array.isArray(pageIds) && pageIds.length) {
+    if (pageIds.length > 50) return { ok: false, error: '單次更新筆數過多' };
+    var uniqueIds = [];
+    for (var p = 0; p < pageIds.length; p++) {
+      var targetId = String(pageIds[p] || '');
+      if (!/^(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/.test(targetId)) return { ok: false, error: 'pageIds 格式不正確' };
+      if (uniqueIds.indexOf(targetId) < 0) uniqueIds.push(targetId);
+    }
+    clean.pageIds = uniqueIds;
+    targetIds = uniqueIds;
+  }
+  Object.keys(fields).forEach(function (k) { if (allowed.indexOf(k) >= 0) clean[k] = fields[k]; });
+  try {
+    if (clean['功德主'] !== undefined) clean['功德主'] = cleanText_(clean['功德主'], '功德主', APP_LIMITS.NAME, true);
+    if (clean['聯絡人'] !== undefined) clean['聯絡人'] = cleanText_(clean['聯絡人'], '聯絡人', APP_LIMITS.NAME, true);
+    if (clean['電話'] !== undefined) clean['電話'] = cleanPhone_(clean['電話']);
+    if (clean['地址'] !== undefined) clean['地址'] = cleanText_(clean['地址'], '地址', APP_LIMITS.ADDRESS, false);
+    if (clean['備註'] !== undefined) clean['備註'] = cleanText_(clean['備註'], '備註', APP_LIMITS.NOTE, false);
+    if (clean['繳費狀況'] !== undefined && CONFIG.PAY_STATUS.indexOf(clean['繳費狀況']) < 0) return { ok: false, error: '繳費狀況不正確' };
+    if (clean['繳款方式'] !== undefined && clean['繳款方式'] && CONFIG.PAY_OPTIONS.indexOf(clean['繳款方式']) < 0) return { ok: false, error: '繳款方式不正確' };
+    // 匯款三欄必須連同繳款方式一起更新，避免缺少目前狀態時做出不完整的局部 PATCH。
+    var touchesTransferFields = clean['匯款日期'] !== undefined || clean['帳號後五碼'] !== undefined || clean['匯款金額'] !== undefined;
+    if (touchesTransferFields && (!clean['繳款方式'] || CONFIG.PAY_OPTIONS.indexOf(clean['繳款方式']) < 0)) {
+      return { ok: false, error: '更新匯款資料時需一併提供有效的繳款方式' };
+    }
+    // 只有明確改為非匯款時可清空匯款三欄；其餘局部 PATCH 不得把既有匯款資料改成不完整。
+    var switchingAwayFromTransfer = clean['繳款方式'] !== undefined && clean['繳款方式'] && clean['繳款方式'] !== '匯款';
+    if (switchingAwayFromTransfer) {
+      clean['匯款日期'] = '';
+      clean['帳號後五碼'] = '';
+      clean['匯款金額'] = 0;
+    } else {
+      if (clean['匯款日期'] !== undefined) clean['匯款日期'] = cleanRemitDate_(clean['匯款日期'], true);
+      if (clean['帳號後五碼'] !== undefined) {
+        clean['帳號後五碼'] = String(clean['帳號後五碼'] || '').trim();
+        if (!/^\d{5}$/.test(clean['帳號後五碼'])) return { ok: false, error: '帳號後五碼必須是 5 位數' };
+      }
+      if (clean['匯款金額'] !== undefined) clean['匯款金額'] = safeMoney_(clean['匯款金額'], '匯款金額', false);
+      if (clean['繳款方式'] === '匯款') {
+        if (clean['匯款日期'] === undefined) return { ok: false, error: '缺匯款日期' };
+        if (clean['帳號後五碼'] === undefined) return { ok: false, error: '缺帳號後五碼' };
+        if (clean['匯款金額'] === undefined) return { ok: false, error: '缺匯款金額' };
+      }
+    }
+    if (CONFIG.GROUP_FIELD && clean[CONFIG.GROUP_FIELD] !== undefined && clean[CONFIG.GROUP_FIELD] &&
+        (!CONFIG.GROUP_OPTIONS || CONFIG.GROUP_OPTIONS.indexOf(clean[CONFIG.GROUP_FIELD]) < 0)) return { ok: false, error: '所屬單位不正確' };
+    ['確認匯款?', '稽核', '個資同意'].forEach(function (k) { if (clean[k] !== undefined) clean[k] = chkTrue(clean[k]); });
+    for (var c = 0; c < (CONFIG.CUSTOM_FIELDS || []).length; c++) {
+      var cf = CONFIG.CUSTOM_FIELDS[c];
+      if (clean[cf.name] === undefined) continue;
+      if (cf.type === 'select') {
+        clean[cf.name] = cleanText_(clean[cf.name], cf.name, 100, cf.required && !cf.showWhenItem);
+        if (clean[cf.name] && cf.options.indexOf(clean[cf.name]) < 0) return { ok: false, error: '選項不正確：' + cf.name };
+      } else if (cf.type === 'checkbox') {
+        clean[cf.name] = chkTrue(clean[cf.name]);
+        if (cf.required && !cf.showWhenItem && !clean[cf.name]) return { ok: false, error: '必填欄位未填：' + cf.name };
+      } else if (cf.type === 'date') {
+        clean[cf.name] = cleanDate_(clean[cf.name], cf.name, cf.required && !cf.showWhenItem);
+      } else {
+        clean[cf.name] = cleanText_(clean[cf.name], cf.name, APP_LIMITS.CUSTOM_TEXT, cf.required && !cf.showWhenItem);
+      }
+    }
+    var hasItems = false;
+    var total = 0;
+    for (var i = 0; i < (CONFIG.QTY_ITEMS || []).length; i++) {
+      var it = CONFIG.QTY_ITEMS[i];
+      if (clean[it.id] === undefined) continue;
+      var qty = (it.pricingMode === 'fixed' || it.pricingMode === 'free') ?
+        safeInteger_(clean[it.id], it.id + '數量', APP_LIMITS.ITEM_QTY) : safeMoney_(clean[it.id], it.id + '金額', true);
+      if (it.pricingMode === 'minimum' && qty > 0 && qty < Number(it.minAmount || 0)) return { ok: false, error: it.id + ' 未達最低金額' };
+      clean[it.id] = qty; hasItems = true;
+      if (!it.pricingMode || it.pricingMode === 'fixed') total += qty * Number(it.price || 0);
+      else if (it.pricingMode === 'donation' || it.pricingMode === 'minimum') total += qty;
+      assertSafeTotal_(total);
+    }
+    if (hasItems) clean['總金額'] = total;
+  } catch (err) {
+    return { ok: false, error: String(err && err.message ? err.message : err) };
+  }
+
+  // 直接 PATCH Notion（每個 pageId 套同一組 properties）
+  var props = buildPatchProperties_(clean);
+  if (!Object.keys(props).length) return { ok: true, count: 0 };
+  for (var u = 0; u < targetIds.length; u++) {
+    if (u > 0) Utilities.sleep(350);   // 多筆連續 PATCH，避開 Notion 429 rate limit
+    var res = notionApi_('patch', '/pages/' + targetIds[u], { properties: props });
+    if (!res.ok) return { ok: false, error: '更新失敗：' + res.error };
+  }
+  return { ok: true, count: targetIds.length };
+}
+
+// 依 clean（扁平欄位）組出 Notion PATCH properties
+function buildPatchProperties_(clean) {
+  var P = {};
+  if (clean['功德主'] !== undefined) P['功德主'] = { title: [{ text: { content: String(clean['功德主'] || '') } }] };
+  if (clean['電話'] !== undefined) P['電話'] = pPhone_(clean['電話']);
+  numFields_().forEach(function (f) { if (clean[f] !== undefined) P[f] = pNum_(clean[f]); });
+  fixedTxtFields_().forEach(function (f) { if (clean[f] !== undefined) P[f] = pTxt_(clean[f]); });
+  submitSelFields_().forEach(function (f) { if (clean[f] !== undefined) { var s = pSel_(clean[f]); if (s) P[f] = s; } });
+  if (clean['繳費狀況'] !== undefined) { var st = pSel_(clean['繳費狀況']); if (st) P['繳費狀況'] = st; }
+  ['稽核', '確認匯款?', '個資同意'].forEach(function (f) { if (clean[f] !== undefined) P[f] = pChk_(clean[f]); });
+  (CONFIG.CUSTOM_FIELDS || []).forEach(function (f) {
+    if (clean[f.name] === undefined) return;
+    var v = clean[f.name];
+    if (f.type === 'select') { var s = pSel_(v); if (s) P[f.name] = s; }
+    else if (f.type === 'checkbox') P[f.name] = pChk_(v);
+    else if (f.type === 'date') P[f.name] = pDate_(v);
+    else P[f.name] = pTxt_(v);
+  });
+  return P;
+}

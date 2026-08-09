@@ -1,0 +1,78 @@
+// ═══════════════════════════════════════════════════════════
+//  {{EVENT_NAME}} — Config.gs
+//  常數唯一來源。前端一律用 getClientConfig(page) 注入，勿在 HTML 硬寫。
+//  由「宮廟共用報名表產生器」產出（多種計價；支援單人／家庭模式）。
+//  🔴 Notion token 與 DB ID 不在此檔，一律放 Secrets.gs（純後端、不注入前端）。
+// ═══════════════════════════════════════════════════════════
+
+var CONFIG = {
+  ORG_NAME: {{ORG_NAME_JS}},
+  EVENT: {{EVENT_JS}},
+  EVENT_NAME: {{EVENT_NAME_JS}},
+  PAGE_TITLE: {{PAGE_TITLE_JS}},
+  REPORT_TITLE: {{REPORT_TITLE_JS}},
+  EVENT_DATE: {{EVENT_DATE_JS}},
+  EVENT_PLACE: {{EVENT_PLACE_JS}},
+  EVENT_DESC: {{EVENT_DESC_JS}},
+  LOGO: {{LOGO_JS}},
+  REMIT_DEADLINE: {{REMIT_DEADLINE_JS}},
+  CLOSED_MSG: {{CLOSED_MSG_JS}},
+
+  // 活動結束就改成 true → clasp push -f → redeploy，index 自動導到 close
+  CLOSED: false,
+
+  REPORT_PASSWORD: {{REPORT_PASSWORD_JS}},
+
+  BANK: {{BANK_JS}},
+  REGISTRATION_MODE: {{REGISTRATION_MODE_JS}},
+  CUSTOM_FIELDS: {{CUSTOM_FIELDS_JS}},
+  CAPACITY: {{CAPACITY_JS}},
+
+  // 品項唯一來源（固定／隨喜／免費／最低額）；欄位名＝Notion 欄位名
+  QTY_ITEMS: {{QTY_ITEMS_JS}},
+
+  // 所屬宮廟／分會／單位，可由產生器自訂欄位名稱與選項
+  GROUP_FIELD: {{GROUP_FIELD_JS}},
+  GROUP_OPTIONS: {{GROUP_OPTIONS_JS}},
+
+  PAY_OPTIONS: {{PAY_OPTIONS_JS}},
+  PAY_STATUS: {{PAY_STATUS_JS}}
+};
+
+// 依頁面切分：所有前端頁面都不得帶密碼、Notion token 或 DB ID
+function getClientConfig(page) {
+  if (page === 'report') {
+    return {
+      EVENT_NAME: CONFIG.EVENT_NAME,
+      ORG_NAME: CONFIG.ORG_NAME,
+      REPORT_TITLE: CONFIG.REPORT_TITLE,
+      REGISTRATION_MODE: CONFIG.REGISTRATION_MODE,
+      CUSTOM_FIELDS: CONFIG.CUSTOM_FIELDS,
+      QTY_ITEMS: CONFIG.QTY_ITEMS,
+      GROUP_FIELD: CONFIG.GROUP_FIELD,
+      GROUP_OPTIONS: CONFIG.GROUP_OPTIONS,
+      PAY_OPTIONS: CONFIG.PAY_OPTIONS,
+      PAY_STATUS: CONFIG.PAY_STATUS
+    };
+  }
+  return {
+    EVENT: CONFIG.EVENT,
+    ORG_NAME: CONFIG.ORG_NAME,
+    EVENT_NAME: CONFIG.EVENT_NAME,
+    PAGE_TITLE: CONFIG.PAGE_TITLE,
+    EVENT_DATE: CONFIG.EVENT_DATE,
+    EVENT_PLACE: CONFIG.EVENT_PLACE,
+    EVENT_DESC: CONFIG.EVENT_DESC,
+    LOGO: CONFIG.LOGO,
+    REMIT_DEADLINE: CONFIG.REMIT_DEADLINE,
+    CLOSED: CONFIG.CLOSED,
+    BANK: CONFIG.BANK,
+    REGISTRATION_MODE: CONFIG.REGISTRATION_MODE,
+    CUSTOM_FIELDS: CONFIG.CUSTOM_FIELDS,
+    CAPACITY: CONFIG.CAPACITY,
+    QTY_ITEMS: CONFIG.QTY_ITEMS,
+    GROUP_FIELD: CONFIG.GROUP_FIELD,
+    GROUP_OPTIONS: CONFIG.GROUP_OPTIONS,
+    PAY_OPTIONS: CONFIG.PAY_OPTIONS
+  };
+}

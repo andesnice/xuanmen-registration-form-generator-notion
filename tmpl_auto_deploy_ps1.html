@@ -1,0 +1,152 @@
+#requires -Version 7
+
+param(
+  [switch]$Login,
+  [string]$Title
+)
+
+$ErrorActionPreference = 'Stop'
+Set-Location -LiteralPath $PSScriptRoot
+if (-not $Title) { $Title = Split-Path -Leaf $PSScriptRoot }
+$accountHelper = Join-Path $PSScriptRoot 'deployment-account.ps1'
+if (-not (Test-Path -LiteralPath $accountHelper)) {
+  Write-Host 'X 找不到 deployment-account.ps1，無法安全管理多帳號部署。' -ForegroundColor Red
+  exit 1
+}
+. $accountHelper
+$script:CurrentDeployEmail = $null
+
+function Fail($msg) {
+  if ($script:CurrentDeployEmail) {
+    Save-DeploymentAccountProfile $script:CurrentDeployEmail
+  }
+  Write-Host "X $msg" -ForegroundColor Red
+  exit 1
+}
+
+function Assert-ClaspSuccess($action) {
+  if ($LASTEXITCODE -ne 0) {
+    Fail "${action}失敗（clasp 錯誤代碼：$LASTEXITCODE）。請保留上方訊息以便排查。"
+  }
+}
+
+if (-not (Get-Command clasp -ErrorAction SilentlyContinue)) {
+  Fail '找不到 clasp。請先安裝：npm install -g @google/clasp'
+}
+
+if ($Login) {
+  Write-Host '> 開瀏覽器登入這次要部署的 Google 帳號...' -ForegroundColor Cyan
+  clasp login
+  Assert-ClaspSuccess 'Google 帳號登入'
+}
+
+Write-Host '> 目前 clasp 登入狀態：' -ForegroundColor Cyan
+$accountEmail = Get-ClaspAccountEmail
+if (-not $accountEmail) {
+  Fail '目前沒有可用的 Google 登入憑證。請重新執行自動部署選單，選 1 後依提示登入。'
+}
+Use-DeploymentAccountProfile $accountEmail | Out-Null
+$script:CurrentDeployEmail = $accountEmail
+Write-Host "  $accountEmail" -ForegroundColor Green
+
+$deployIdFile = Join-Path $PSScriptRoot '.deploy-id.txt'
+$claspJson = Join-Path $PSScriptRoot '.clasp.json'
+$desc = '活動報名表 ' + (Get-Date -Format 'yyyy-MM-dd HH:mm')
+
+if (-not (Test-Path -LiteralPath $claspJson)) {
+  Write-Host '> 首次部署：即將建立新的 GAS Web App 專案。' -ForegroundColor Cyan
+  $ok = Read-Host '  確認帳號正確、要建立？(y/N)'
+  if ($ok -ine 'y') { Fail '已取消。要換帳號請回到選單選擇更換帳號。' }
+
+  # clasp 3.x 的 Web App 必須先建立 standalone Apps Script，再執行 deploy。
+  # create 會 pull 空白初始檔，使用隔離資料夾可避免覆蓋活動原始碼。
+  $bootstrapDir = Join-Path $PSScriptRoot '.clasp-bootstrap'
+  if (Test-Path -LiteralPath $bootstrapDir) {
+    Fail "暫存資料夾已存在：$bootstrapDir。請先確認內容後再處理。"
+  }
+
+  New-Item -ItemType Directory -Path $bootstrapDir | Out-Null
+  try {
+    clasp create --type standalone --title $Title --rootDir $bootstrapDir
+    Assert-ClaspSuccess '建立 GAS 專案'
+    if (-not (Test-Path -LiteralPath $claspJson)) {
+      Fail 'GAS 專案建立後找不到 .clasp.json，已停止部署。'
+    }
+
+    $claspSettings = Get-Content -LiteralPath $claspJson -Raw | ConvertFrom-Json
+    $claspSettings.rootDir = '.'
+    $claspSettings | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $claspJson -Encoding utf8
+    Save-DeploymentAccountProfile $accountEmail
+  }
+  finally {
+    if (Test-Path -LiteralPath $bootstrapDir) {
+      Remove-Item -LiteralPath $bootstrapDir -Recurse -Force
+    }
+  }
+}
+
+$deployId = $null
+if (Test-Path -LiteralPath $deployIdFile) {
+  $deployId = (Get-Content -LiteralPath $deployIdFile -Raw).Trim()
+}
+
+$deploymentOutput = (clasp list-deployments 2>&1 | Out-String).Trim()
+$deploymentExit = $LASTEXITCODE
+if ($deploymentExit -ne 0) {
+  Fail "目前帳號 $accountEmail 無權讀取 .clasp.json 指向的 GAS 專案；已停止，未 push。"
+}
+if ($deployId) {
+  if (-not (Test-DeploymentIdInClaspOutput $deployId $deploymentOutput)) {
+    Fail "部署 ID $deployId 不屬於目前 Script；已停止，未 push。請用部署選單切換正確帳號。"
+  }
+}
+
+Write-Host '> 推送報名表程式碼 (clasp push -f)...' -ForegroundColor Cyan
+clasp push -f
+Assert-ClaspSuccess '推送程式碼'
+
+if ($deployId) {
+  Write-Host "> 更新既有部署（網址不變）：$deployId" -ForegroundColor Cyan
+  clasp deploy -i $deployId -d $desc | Out-Null
+  Assert-ClaspSuccess '更新部署'
+} else {
+  Write-Host '> 建立新部署...' -ForegroundColor Cyan
+  $out = (clasp deploy -d $desc 2>&1 | Out-String)
+  $deployExitCode = $LASTEXITCODE
+  Write-Host $out
+  if ($deployExitCode -ne 0) {
+    Fail "建立部署失敗（clasp 錯誤代碼：$deployExitCode）。請保留上方訊息以便排查。"
+  }
+
+  $match = [regex]::Match($out, 'AKfycb[\w-]+')
+  if (-not $match.Success) { Fail '抓不到部署 ID，請保留上方 clasp 輸出以便排查。' }
+  $deployId = $match.Value
+  Set-Content -LiteralPath $deployIdFile -Value $deployId -NoNewline
+}
+
+$url = "https://script.google.com/macros/s/$deployId/exec"
+$reportUrl = "$url?page=report"
+$lookupUrl = "$url?page=lookup"
+$urlFile = Join-Path $PSScriptRoot '報名表網址.txt'
+$reportUrlFile = Join-Path $PSScriptRoot '後台網址.txt'
+$lookupUrlFile = Join-Path $PSScriptRoot '報名查詢網址.txt'
+$urlListFile = Join-Path $PSScriptRoot '網址清單.txt'
+Set-Content -LiteralPath $urlFile -Value $url -Encoding utf8
+Set-Content -LiteralPath $reportUrlFile -Value $reportUrl -Encoding utf8
+Set-Content -LiteralPath $lookupUrlFile -Value $lookupUrl -Encoding utf8
+Set-Content -LiteralPath $urlListFile -Value @("報名表網址：$url", "報名查詢網址：$lookupUrl", "後台網址：$reportUrl") -Encoding utf8
+try { Set-Clipboard -Value $url } catch { }
+Save-DeploymentAccountProfile $accountEmail
+
+Write-Host ''
+Write-Host '==================================================' -ForegroundColor Green
+Write-Host 'OK 完成！報名表網址：' -ForegroundColor Green
+Write-Host "   $url" -ForegroundColor Green
+Write-Host '後台網址：' -ForegroundColor Green
+Write-Host "   $reportUrl" -ForegroundColor Green
+Write-Host '報名查詢／修改網址：' -ForegroundColor Green
+Write-Host "   $lookupUrl" -ForegroundColor Green
+Write-Host '==================================================' -ForegroundColor Green
+Write-Host '網址已儲存到：報名表網址.txt、報名查詢網址.txt、後台網址.txt、網址清單.txt' -ForegroundColor Cyan
+Write-Host '已嘗試把報名表網址複製到剪貼簿；請把兩個網址加入書籤或妥善保存。' -ForegroundColor Yellow
+Write-Host '第一次開啟或操作時，Google 可能要求專案擁有者授權。' -ForegroundColor DarkGray

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<style>
+*,*::before,*::after{box-sizing:border-box}body{margin:0;font-family:'Microsoft JhengHei',sans-serif;background:#f5f0e8;color:#2c1a0e;padding:18px 12px}
+.wrap{max-width:680px;margin:auto}h1{color:{{THEME_PRIMARY}};font-size:22px;text-align:center}.card{background:#fff;border:1px solid #e5d9c0;border-radius:12px;padding:16px;margin-bottom:12px}
+label{display:block;font-weight:700;font-size:14px;margin:9px 0 4px}input,select,textarea{width:100%;padding:10px;border:1px solid #e5d9c0;border-radius:8px;font-size:16px}textarea{min-height:60px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.person{border:1px solid #e5d9c0;border-radius:9px;padding:12px;margin:10px 0;background:#fffdf8}.item{display:grid;grid-template-columns:1fr 130px;gap:8px;align-items:end}
+.btn{width:100%;padding:12px;border:0;border-radius:9px;background:{{THEME_PRIMARY}};color:#fff;font-size:16px;font-weight:800;cursor:pointer}.btn:disabled{opacity:.5}.msg{white-space:pre-wrap;text-align:center;padding:10px}.err{color:#a12}.ok{color:#176b2c}.hidden{display:none}.check{display:flex;gap:8px;align-items:center}.check input{width:20px}.hint{font-size:12px;color:#8a7a60}
+@media(max-width:560px){.row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 id="title"></h1>
+  <div class="card" id="gate">
+    <label>報名編號</label><input id="reg" placeholder="例：R-20260724-XXXXXX">
+    <label>聯絡電話</label><input id="phone" type="tel">
+    <button class="btn" style="margin-top:12px" onclick="lookup()">查詢報名</button>
+    <div id="gateMsg" class="msg"></div>
+  </div>
+  <div id="editor" class="hidden">
+    <div class="card"><h2>共用報名資料</h2><div id="shared"></div></div>
+    <div class="card"><h2>功德主與品項</h2><div id="people"></div><div id="grandTotal" style="font-weight:800;text-align:right;color:{{THEME_PRIMARY}}"></div></div>
+    <button class="btn" id="saveBtn" onclick="save()">儲存修改</button>
+    <div id="saveMsg" class="msg"></div>
+  </div>
+</div>
+<script>
+{{CFG_INJECT}}
+var ROWS=[], CLOSED=false;
+function $(id){return document.getElementById(id)}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function money(n){return 'NT$ '+Number(n||0).toLocaleString('en-US')}
+$('title').textContent=(CFG.EVENT_NAME||'活動')+' 報名查詢／修改';
+function lookup(){
+  $('gateMsg').textContent='查詢中…';
+  google.script.run.withSuccessHandler(function(r){
+    if(!r||!r.ok){$('gateMsg').className='msg err';$('gateMsg').textContent=(r&&r.error)||'查詢失敗';return}
+    ROWS=r.data||[];CLOSED=!!r.closed;$('gateMsg').textContent='';render();
+  }).withFailureHandler(function(e){$('gateMsg').className='msg err';$('gateMsg').textContent=e.message}).publicLookupApi($('reg').value.trim(),$('phone').value.trim());
+}
+function sharedInput(k,v,type,opts){
+  if(type==='checkbox')return '<label class="check"><input type="checkbox" data-shared="'+esc(k)+'" data-bool="1"'+(v===true?' checked':'')+'><span>'+esc(k)+'</span></label>';
+  if(type==='select')return '<label>'+esc(k)+'</label><select data-shared="'+esc(k)+'"><option value=""></option>'+(opts||[]).map(function(x){return '<option'+(x===v?' selected':'')+'>'+esc(x)+'</option>'}).join('')+'</select>';
+  return '<label>'+esc(k)+'</label><input '+(type==='date'?'type="date"':'')+' data-shared="'+esc(k)+'" value="'+esc(type==='date'?String(v||'').slice(0,10):(v||''))+'">';
+}
+function render(){
+  if(!ROWS.length)return;var r=ROWS[0],h='';
+  if(CFG.REGISTRATION_MODE==='family')h+=sharedInput('聯絡人',r['聯絡人']);
+  h+=sharedInput('地址',r['地址']);
+  if(CFG.GROUP_FIELD&&CFG.GROUP_OPTIONS)h+=sharedInput(CFG.GROUP_FIELD,r[CFG.GROUP_FIELD],'select',CFG.GROUP_OPTIONS);
+  (CFG.CUSTOM_FIELDS||[]).forEach(function(f){h+='<div data-condition="'+esc(f.showWhenItem||'')+'">'+sharedInput(f.name,r[f.name],f.type,f.options)+'</div>'});
+  h+=sharedInput('繳款方式',r['繳款方式'],'select',CFG.PAY_OPTIONS);
+  h+='<div id="remitEdit">'+sharedInput('匯款日期',r['匯款日期'])+sharedInput('帳號後五碼',r['帳號後五碼'])+sharedInput('匯款金額',r['匯款金額'])+'</div>';
+  h+='<label>備註</label><textarea data-shared="備註">'+esc(r['備註']||'')+'</textarea>';
+  $('shared').innerHTML=h;
+  var pay=document.querySelector('[data-shared="繳款方式"]');pay.onchange=toggleRemit;toggleRemit();
+  $('people').innerHTML=ROWS.map(function(row,i){
+    return '<div class="person" data-page="'+esc(row.pageId)+'"><strong>功德主 '+(i+1)+'</strong>'+sharedInput('功德主',row['功德主'])+
+      (CFG.QTY_ITEMS||[]).map(function(it){var amount=it.pricingMode==='donation'||it.pricingMode==='minimum';return '<div class="item"><label>'+esc(it.id)+(amount?'（金額）':'（數量）')+'</label><input data-item="'+esc(it.id)+'" inputmode="numeric" value="'+esc(row[it.id]||0)+'"></div>'}).join('')+'</div>';
+  }).join('');
+  $('editor').className='';if(CLOSED){$('saveBtn').disabled=true;$('saveMsg').textContent='報名已截止，目前僅供查詢。'}recalc();
+  document.querySelectorAll('[data-item]').forEach(function(x){x.oninput=recalc});
+}
+function toggleRemit(){var p=document.querySelector('[data-shared="繳款方式"]');$('remitEdit').style.display=p&&p.value==='匯款'?'block':'none'}
+function rowTotal(root){var t=0;(CFG.QTY_ITEMS||[]).forEach(function(it){var el=Array.prototype.slice.call(root.querySelectorAll('[data-item]')).filter(function(x){return x.dataset.item===it.id})[0],v=Number(el?el.value:0)||0;if(!it.pricingMode||it.pricingMode==='fixed')t+=v*(it.price||0);else if(it.pricingMode==='donation'||it.pricingMode==='minimum')t+=v});return t}
+function recalc(){var t=0,selected={};document.querySelectorAll('.person').forEach(function(p){t+=rowTotal(p);p.querySelectorAll('[data-item]').forEach(function(x){if(Number(x.value)>0)selected[x.dataset.item]=true})});$('grandTotal').textContent='總金額 '+money(t);document.querySelectorAll('[data-condition]').forEach(function(x){x.style.display=!x.dataset.condition||selected[x.dataset.condition]?'block':'none'})}
+function save(){
+  var shared={};document.querySelectorAll('[data-shared]').forEach(function(el){shared[el.dataset.shared]=el.dataset.bool?el.checked:el.value});
+  var people=[];document.querySelectorAll('.person').forEach(function(root){var x={pageId:root.dataset.page,'功德主':root.querySelector('[data-shared="功德主"]').value.trim()};root.querySelectorAll('[data-item]').forEach(function(el){x[el.dataset.item]=parseInt(el.value,10)||0});people.push(x)});
+  $('saveBtn').disabled=true;$('saveMsg').className='msg';$('saveMsg').textContent='儲存中…';
+  google.script.run.withSuccessHandler(function(r){$('saveBtn').disabled=false;if(!r||!r.ok){$('saveMsg').className='msg err';$('saveMsg').textContent=(r&&r.error)||'儲存失敗';return}$('saveMsg').className='msg ok';$('saveMsg').textContent='修改完成'}).withFailureHandler(function(e){$('saveBtn').disabled=false;$('saveMsg').className='msg err';$('saveMsg').textContent=e.message}).publicUpdateApi($('reg').value.trim(),$('phone').value.trim(),{shared:shared,people:people});
+}
+</script>
+</body>
+</html>

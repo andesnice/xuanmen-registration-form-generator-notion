@@ -1,0 +1,17 @@
+# Google Apps Script／部署帳號本機狀態
+.clasp.json
+.clasprc.json
+.deploy-id.txt
+.active-deploy-account.txt
+.deploy-accounts/
+部署網址.txt
+
+# 本機工具與產物
+.agents/
+.gas-local/
+node_modules/
+*.zip
+.env
+.env.*
+Thumbs.db
+.DS_Store

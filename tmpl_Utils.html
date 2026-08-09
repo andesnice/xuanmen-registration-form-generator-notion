@@ -1,0 +1,137 @@
+// ═══════════════════════════════════════════════════════════
+//  {{EVENT_NAME}} — Utils.gs
+//  共用輸入驗證、名額鎖，以及 Notion properties 建構／讀值工具。
+// ═══════════════════════════════════════════════════════════
+
+var APP_LIMITS = {
+  NAME: 60,
+  ADDRESS: 300,
+  NOTE: 2000,
+  CUSTOM_TEXT: 2000,
+  ITEM_QTY: 9999,
+  MONEY: 99999999,
+  TOTAL: 99999999
+};
+
+function chkTrue(v) {
+  return v === true || v === 'true' || v === 1 || v === '1' ||
+         v === '__YES__' || v === 'on' || v === '是';
+}
+
+function num(v) {
+  var n = Number(v);
+  return isNaN(n) ? 0 : n;
+}
+
+function cleanText_(value, label, maxLength, required) {
+  if (typeof value === 'boolean' || (value !== null && typeof value === 'object')) throw new Error(label + '格式不正確');
+  var s = String(value == null ? '' : value).trim();
+  if (required && !s) throw new Error('缺' + label);
+  if (maxLength && s.length > maxLength) throw new Error(label + '不可超過 ' + maxLength + ' 字');
+  return s;
+}
+
+// 接受全形數字、空白、括號與連字號；+886／00886／886 統一轉為台灣 0 開頭。
+function normalizePhone_(value) {
+  var s = String(value == null ? '' : value).trim().replace(/[０-９]/g, function(c) {
+    return String.fromCharCode(c.charCodeAt(0) - 65248);
+  });
+  s = s.replace(/[\s\-().]/g, '');
+  if (s.indexOf('00886') === 0) s = '0' + s.slice(5);
+  else if (s.indexOf('+886') === 0) s = '0' + s.slice(4);
+  else if (s.indexOf('886') === 0) s = '0' + s.slice(3);
+  return /^\d+$/.test(s) ? s : '';
+}
+
+function cleanPhone_(value) {
+  var phone = normalizePhone_(value);
+  if (phone.length < 8 || phone.length > 15) throw new Error('聯絡電話需為 8～15 位數字');
+  return phone;
+}
+
+function safeInteger_(value, label, maxValue) {
+  var invalidType = typeof value === 'boolean' || (value !== null && typeof value === 'object');
+  var n = invalidType ? NaN : Number(value == null || String(value).trim() === '' ? 0 : value);
+  if (!isFinite(n) || Math.floor(n) !== n || n < 0 || n > maxValue) {
+    throw new Error(label + '需為 0～' + maxValue + ' 的整數');
+  }
+  return n;
+}
+
+function safeMoney_(value, label, allowZero) {
+  var invalidType = typeof value === 'boolean' || (value !== null && typeof value === 'object');
+  var n = invalidType ? NaN : Number(value == null || String(value).trim() === '' ? 0 : value);
+  if (!isFinite(n) || n < 0 || (!allowZero && n <= 0) || n > APP_LIMITS.MONEY) {
+    throw new Error(label + (allowZero ? '需為 0～' : '需大於 0 且不超過 ') + APP_LIMITS.MONEY);
+  }
+  return n;
+}
+
+function assertSafeTotal_(total) {
+  if (!isFinite(total) || total < 0 || total > APP_LIMITS.TOTAL) {
+    throw new Error('總金額超過系統可接受範圍，請降低品項數量或金額');
+  }
+  return total;
+}
+
+function cleanDate_(value, label, required) {
+  var s = String(value == null ? '' : value).trim();
+  if (required && !s) throw new Error('缺' + label);
+  if (!s) return '';
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) throw new Error(label + '格式不正確');
+  var d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  if (d.getUTCFullYear() !== Number(m[1]) || d.getUTCMonth() !== Number(m[2]) - 1 || d.getUTCDate() !== Number(m[3])) {
+    throw new Error(label + '日期不正確');
+  }
+  return s;
+}
+
+// 匯款日期沿用既有 UI 的 M/D，也接受 YYYY-MM-DD／YYYY/M/D；但必須是有效曆日。
+function cleanRemitDate_(value, required) {
+  var s = cleanText_(value, '匯款日期', 20, required);
+  if (!s) return '';
+  var m = /^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/.exec(s);
+  var year, month, day;
+  if (m) {
+    year = Number(m[1]); month = Number(m[2]); day = Number(m[3]);
+  } else {
+    m = /^(\d{1,2})[\/-](\d{1,2})$/.exec(s);
+    if (!m) throw new Error('匯款日期格式不正確，請填 YYYY-MM-DD 或 M/D');
+    year = 2000; month = Number(m[1]); day = Number(m[2]);
+  }
+  var d = new Date(Date.UTC(year, month - 1, day));
+  if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) {
+    throw new Error('匯款日期不正確');
+  }
+  return s;
+}
+
+// 名額、查重與寫入必須在同一把 ScriptLock 內，否則併發送出仍可能超賣。
+function acquireCapacityLock_() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('目前同時報名人數較多，請稍後再送出');
+  return lock;
+}
+
+function releaseLock_(lock) {
+  if (!lock) return;
+  try { lock.releaseLock(); } catch (ignore) {}
+}
+
+// ── 寫入 Notion：把值包成 property 物件 ──────────────────────
+function pTxt_(v)  { return { rich_text: [{ text: { content: String(v == null ? '' : v) } }] }; }  // 後五碼等一律文字，保前導 0
+function pNum_(v)  { return { number: Number(v) || 0 }; }
+function pSel_(v)  { v = String(v == null ? '' : v).trim(); return v ? { select: { name: v } } : null; }
+function pChk_(v)  { return { checkbox: chkTrue(v) }; }
+function pPhone_(v){ v = String(v == null ? '' : v).trim(); return { phone_number: v || null }; }
+function pDate_(v) { v = String(v == null ? '' : v).trim(); return { date: v ? { start: v } : null }; }
+
+// ── 讀取 Notion：從 property 物件取出純值 ────────────────────
+function gTitle_(x) { return (x && x.title && x.title[0]) ? x.title[0].plain_text : ''; }
+function gText_(x)  { return (x && x.rich_text && x.rich_text[0]) ? x.rich_text[0].plain_text : ''; }
+function gNum_(x)   { return (x && typeof x.number === 'number') ? x.number : 0; }
+function gSel_(x)   { return (x && x.select) ? x.select.name : ''; }
+function gPhone_(x) { return (x && x.phone_number) ? x.phone_number : ''; }
+function gDate_(x)  { return (x && x.date) ? x.date.start : ''; }
+function gChk_(x)   { return (x && typeof x.checkbox === 'boolean') ? x.checkbox : false; }
