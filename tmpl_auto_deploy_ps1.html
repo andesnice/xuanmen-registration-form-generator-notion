@@ -30,9 +30,57 @@ function Assert-ClaspSuccess($action) {
   }
 }
 
+function Test-NodeSyntax([string]$source, [string]$label) {
+  $output = ($source | & node --check - 2>&1 | Out-String).Trim()
+  $exitCode = $LASTEXITCODE
+  if ($exitCode -ne 0) { Fail "部署前語法檢查失敗：$label`n$output" }
+}
+
+function Invoke-ActivityPreflight {
+  Write-Host '> 部署前檢查：必要檔案、manifest 與 JavaScript 語法...' -ForegroundColor Cyan
+  if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Fail '找不到 Node.js，無法執行部署前語法檢查。' }
+  $required = @('Code.gs','Config.gs','Utils.gs','Secrets.gs','appsscript.json','index.html','lookup.html','report.html','close.html')
+  foreach ($name in $required) {
+    if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $name))) { Fail "部署前檢查失敗：缺少 $name" }
+  }
+  try { $manifest = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'appsscript.json') -Raw | ConvertFrom-Json }
+  catch { Fail "部署前檢查失敗：appsscript.json 不是有效 JSON。$($_.Exception.Message)" }
+  if ($manifest.timeZone -ne 'Asia/Taipei' -or $manifest.runtimeVersion -ne 'V8' -or
+      $manifest.webapp.access -ne 'ANYONE_ANONYMOUS' -or $manifest.webapp.executeAs -ne 'USER_DEPLOYING') {
+    Fail '部署前檢查失敗：appsscript.json 的時區、V8 或 Web App 權限不符合活動報名表規格。'
+  }
+  Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.gs' -File | ForEach-Object {
+    $sameNameJs = [System.IO.Path]::ChangeExtension($_.FullName, '.js')
+    if (Test-Path -LiteralPath $sameNameJs) { Fail "同時存在同名 .gs／.js，clasp push 會衝突：$($_.BaseName)" }
+    $source = Get-Content -LiteralPath $_.FullName -Raw
+    Test-NodeSyntax $source $_.Name
+  }
+  Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.html' -File | ForEach-Object {
+    $html = Get-Content -LiteralPath $_.FullName -Raw
+    $scripts = [regex]::Matches($html, '(?is)<script(?:\s[^>]*)?>(.*?)</script>')
+    for ($i = 0; $i -lt $scripts.Count; $i++) {
+      $js = [regex]::Replace($scripts[$i].Groups[1].Value, '<\?!=[\s\S]*?\?>', '{}').Trim()
+      if ($js) { Test-NodeSyntax $js "$($_.Name) script $($i + 1)" }
+    }
+  }
+  Write-Host '  部署前檢查通過。' -ForegroundColor Green
+}
+
 if (-not (Get-Command clasp -ErrorAction SilentlyContinue)) {
   Fail '找不到 clasp。請先安裝：npm install -g @google/clasp'
 }
+$claspVersionText = (& clasp --version 2>&1 | Out-String).Trim()
+$claspVersionMatch = [regex]::Match($claspVersionText, '\d+\.\d+\.\d+')
+if ($LASTEXITCODE -ne 0 -or -not $claspVersionMatch.Success) {
+  Fail '無法確認 clasp 版本。請重新安裝：npm install -g @google/clasp@3'
+}
+$claspVersion = [version]$claspVersionMatch.Value
+if ($claspVersion.Major -ne 3 -or $claspVersion -lt [version]'3.3.0') {
+  Fail "目前 clasp $claspVersion 未經此部署流程驗證；請安裝 3.3.x：npm install -g @google/clasp@3.3.0"
+}
+Write-Host "  clasp $claspVersion（版本檢查通過）" -ForegroundColor DarkGray
+
+Invoke-ActivityPreflight
 
 if ($Login) {
   Write-Host '> 開瀏覽器登入這次要部署的 Google 帳號...' -ForegroundColor Cyan

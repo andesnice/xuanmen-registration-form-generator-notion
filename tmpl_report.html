@@ -44,6 +44,8 @@ table{width:100%;border-collapse:collapse;font-size:14px;white-space:nowrap}
 th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}
 th{background:#f3ece0;color:#6a5a40;position:sticky;top:0}
 tr:hover td{background:#fbf6ec}
+tr.cancelled td{color:#9a8a70;background:#f6f3ef;text-decoration:none}
+tr.cancelled:hover td{background:#f1ece6}
 .chk{width:18px;height:18px}
 select.st{padding:5px;border:1px solid var(--line);border-radius:6px;background:#fffdf8}
 .edit{background:#fff;border:1px solid var(--gold);color:var(--red);border-radius:6px;padding:4px 8px;font-size:13px}
@@ -157,6 +159,7 @@ function $(id){ return document.getElementById(id); }
 function money(n){ return Number(n||0).toLocaleString('en-US'); }
 function escHtml(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function calcTotal(r){ var t=0; (CFG.QTY_ITEMS||[]).forEach(function(it){ var v=Number(r[it.id])||0; t+=(!it.pricingMode||it.pricingMode==='fixed')?v*(Number(it.price)||0):((it.pricingMode==='donation'||it.pricingMode==='minimum')?v:0); }); return t; }
+function isActive(r){ return String((r&&r['報名狀態'])||'有效')!=='已取消'; }
 
 // ── 密碼門 ──
 function tryLogin(){
@@ -196,31 +199,34 @@ function load(){
 
 function stat(k,v){ return '<div class="stat"><div class="k">'+escHtml(k)+'</div><div class="v">'+escHtml(v)+'</div></div>'; }
 function renderStats(list){
-  var total = list.reduce(function(s,r){ return s + calcTotal(r); }, 0);
-  var paid = list.filter(function(r){ return r['繳費狀況'] === '已繳款'; }).length;
-  var confirmed = list.filter(function(r){ return r['確認匯款?'] === true; }).length;
+  var cancelled = list.filter(function(r){ return !isActive(r); }).length;
+  var active = list.filter(isActive);
+  var total = active.reduce(function(s,r){ return s + calcTotal(r); }, 0);
+  var paid = active.filter(function(r){ return r['繳費狀況'] === '已繳款'; }).length;
+  var confirmed = active.filter(function(r){ return r['確認匯款?'] === true; }).length;
   var html = '';
   if (IS_FAMILY) {
     var families = {};
-    list.forEach(function(r){ if (r['家庭編號']) families[r['家庭編號']] = true; });
+    active.forEach(function(r){ if (r['家庭編號']) families[r['家庭編號']] = true; });
     var paidFamilies = {};
     var confirmedFamilies = {};
-    list.forEach(function(r){
+    active.forEach(function(r){
       if (r['家庭編號'] && r['繳費狀況'] === '已繳款') paidFamilies[r['家庭編號']] = true;
       if (r['家庭編號'] && r['確認匯款?'] === true) confirmedFamilies[r['家庭編號']] = true;
     });
     paid = Object.keys(paidFamilies).length;
     confirmed = Object.keys(confirmedFamilies).length;
-    html += stat('家庭戶數', Object.keys(families).length) + stat('功德主筆數', list.length);
+    html += stat('有效家庭戶數', Object.keys(families).length) + stat('有效功德主筆數', active.length);
   } else {
-    html += stat('報名筆數', list.length);
+    html += stat('有效報名筆數', active.length);
   }
   (CFG.QTY_ITEMS || []).forEach(function(it){
-    var qty = list.reduce(function(s,r){ return s + (Number(r[it.id]) || 0); }, 0);
+    var qty = active.reduce(function(s,r){ return s + (Number(r[it.id]) || 0); }, 0);
     if (it.pricingMode === 'donation' || it.pricingMode === 'minimum') html += stat(it.id + '總額', 'NT$ ' + money(qty));
     else html += stat(it.id + '數量', money(qty) + ' ' + (it.unit || '份'));
   });
-  html += stat(IS_FAMILY ? '已繳款家庭' : '已繳款', paid) +
+  html += stat('已取消筆數', cancelled) +
+    stat(IS_FAMILY ? '已繳款家庭' : '已繳款', paid) +
     stat(IS_FAMILY ? '已確認匯款家庭' : '已確認匯款', confirmed) +
     stat('總金額', 'NT$ ' + money(total));
   $('stats').innerHTML = html;
@@ -237,6 +243,7 @@ function switchTab(t){
 
 // ── 採購數量彙總（畫面與 Excel 共用，避免兩邊各算各的漂移）；list＝要統計的資料列 ──
 function computeBuy(list){
+  list = (list || []).filter(isActive);
   var goods = (CFG.QTY_ITEMS || []).filter(function(it){ var m = it.pricingMode || 'fixed'; return m === 'fixed' || m === 'free'; });
   var moneyItems = (CFG.QTY_ITEMS || []).filter(function(it){ return it.pricingMode === 'donation' || it.pricingMode === 'minimum'; });
   var goodsRows = goods.map(function(it){
@@ -337,7 +344,7 @@ function cols(){
   var c = IS_FAMILY ? ['報名編號','家庭編號','聯絡人','電話','功德主'] : ['報名編號','功德主','電話'];
   if (CFG.GROUP_FIELD && CFG.GROUP_OPTIONS && CFG.GROUP_OPTIONS.length) c.push(CFG.GROUP_FIELD);
   c = c.concat(CUSTOM_FIELDS.map(function(f){return f.name;}));
-  c = c.concat(ITEM_IDS, ['總金額','繳款方式','匯款日期','帳號後五碼','匯款金額','繳費狀況','確認匯款?','稽核','個資同意','報名時間']);
+  c = c.concat(ITEM_IDS, ['總金額','報名狀態','取消時間','繳款方式','匯款日期','帳號後五碼','匯款金額','繳費狀況','確認匯款?','稽核','個資同意','報名時間']);
   return c;
 }
 
@@ -358,14 +365,15 @@ function rowHtml(r,C,extraClass){
     if (c === '匯款金額') return '<td>' + money(r[c]) + '</td>';
     var itemDef = (CFG.QTY_ITEMS||[]).filter(function(it){return it.id===c;})[0];
     if (itemDef && (itemDef.pricingMode==='donation'||itemDef.pricingMode==='minimum')) return '<td>NT$ '+money(r[c])+'</td>';
-    if (c === '報名時間') return '<td>' + fmtDate(r[c]) + '</td>';
+    if (c === '報名時間' || c === '取消時間') return '<td>' + fmtDate(r[c]) + '</td>';
     var customDef = CUSTOM_FIELDS.filter(function(f){return f.name===c;})[0];
     if (customDef && customDef.type === 'checkbox') return '<td>' + (r[c]===true?'✅':'—') + '</td>';
     if (customDef && customDef.type === 'date') return '<td>' + escHtml(String(r[c]||'').slice(0,10)) + '</td>';
     return '<td>' + escHtml(r[c]!=null?r[c]:'') + '</td>';
   }).join('');
-  return '<tr class="'+(extraClass||'')+'">' + tds + '<td><button class="edit" type="button" onclick="openModal(\''+r.pageId+'\')">編輯</button>'+
-    '<button class="receipt" type="button" onclick="openReceipt(\''+r.pageId+'\')">收據</button></td></tr>';
+  var active=isActive(r), cls=((extraClass||'')+(active?'':' cancelled')).trim();
+  var actions=active?('<button class="edit" type="button" onclick="openModal(\''+r.pageId+'\')">編輯</button><button class="receipt" type="button" onclick="openReceipt(\''+r.pageId+'\')">收據</button>'):'已取消';
+  return '<tr class="'+cls+'">' + tds + '<td>'+actions+'</td></tr>';
 }
 
 function render(){
@@ -388,9 +396,9 @@ function render(){
   });
   $('tbody').innerHTML = order.map(function(id){
     var rows=groups[id], first=rows[0], open=!!FAMILY_OPEN[id] || !!q;
-    var familyTotal=rows.reduce(function(s,r){return s+calcTotal(r);},0);
+    var activeRows=rows.filter(isActive), familyTotal=activeRows.reduce(function(s,r){return s+calcTotal(r);},0);
     var head='<tr class="family-summary" data-family="'+escHtml(id)+'"><td colspan="'+(C.length+1)+'">▸ '+escHtml(first['聯絡人']||'未填聯絡人')+
-      '<span class="sub">'+rows.length+' 位功德主｜'+escHtml(id)+'｜NT$ '+money(familyTotal)+'</span></td></tr>';
+      '<span class="sub">'+activeRows.length+' 位有效／'+(rows.length-activeRows.length)+' 位取消｜'+escHtml(id)+'｜NT$ '+money(familyTotal)+'</span></td></tr>';
     return head+rows.map(function(r){return rowHtml(r,C,'family-child'+(open?'':' collapsed')+' family-'+escHtml(id));}).join('');
   }).join('');
   document.querySelectorAll('.family-summary').forEach(function(tr){
@@ -401,11 +409,11 @@ function render(){
 function fmtDate(s){ if(!s) return ''; return String(s).replace('T',' ').slice(0,16); }
 
 function statusSelect(r){
-  return '<select class="st" onchange="patch(\''+r.pageId+'\',{\'繳費狀況\':this.value})">' +
+  return '<select class="st"'+(isActive(r)?'':' disabled')+' onchange="patch(\''+r.pageId+'\',{\'繳費狀況\':this.value})">' +
     PAY_STATUS.map(function(s){ return '<option'+(r['繳費狀況']===s?' selected':'')+'>'+s+'</option>'; }).join('') + '</select>';
 }
 function cbCell(r,field){
-  return '<input type="checkbox" class="chk"'+(r[field]===true?' checked':'')+
+  return '<input type="checkbox" class="chk"'+(r[field]===true?' checked':'')+(isActive(r)?'':' disabled')+
     ' onchange="patch(\''+r.pageId+'\',{\''+field+'\':this.checked})">';
 }
 
@@ -440,6 +448,7 @@ var EDIT_ID = '';
 function openModal(pageId){
   EDIT_ID = pageId;
   var r = ROWS.filter(function(x){ return x.pageId === pageId; })[0]; if (!r) return;
+  if(!isActive(r)){alert('此筆報名已取消，僅供查詢。');return;}
   var h = '';
   if (IS_FAMILY) {
     h += '<div class="hint">家庭編號：'+escHtml(r['家庭編號']||'')+'</div>';
@@ -500,7 +509,7 @@ function todayText(){
   return d.getFullYear() + '-' + two(d.getMonth()+1) + '-' + two(d.getDate());
 }
 function openReceipt(pageId){
-  var rows = receiptRowsFor(pageId); if (!rows.length) return;
+  var rows = receiptRowsFor(pageId).filter(isActive); if (!rows.length){alert('已取消的報名不產生收據。');return;}
   var first = rows[0];
   var total = rows.reduce(function(sum,r){ return sum + calcTotal(r); }, 0);
   var receiptNo = first['報名編號'] || String(first.pageId||'').replace(/-/g,'').slice(-10);
@@ -587,7 +596,7 @@ function exportXlsx(){
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '報名');
   // 採購彙總分頁（與明細同一份全量資料；有品項才加）
-  var aoa = buyAoa(ROWS);
+  var aoa = buyAoa(ROWS.filter(isActive));
   if (aoa.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), '採購彙總');
   XLSX.writeFile(wb, CFG.EVENT_NAME + '_報名.xlsx');
 }

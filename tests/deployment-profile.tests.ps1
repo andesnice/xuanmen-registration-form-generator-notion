@@ -10,6 +10,38 @@ function Assert-Equal($Expected, $Actual, $Message) {
   }
 }
 
+function Assert-PowerShellSyntax([string]$Path) {
+  $tokens = $null
+  $errors = $null
+  [System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$errors) | Out-Null
+  if ($errors.Count -gt 0) {
+    throw "PowerShell 語法錯誤：$Path`n$($errors | ForEach-Object { $_.Message } | Out-String)"
+  }
+}
+
+function Assert-PreflightBeforeMutation([string]$Path, [string]$Call) {
+  $source = (Get-Content -LiteralPath $Path -Raw).Replace("`r`n", "`n")
+  $callIndex = $source.IndexOf("`n$Call`n", [System.StringComparison]::Ordinal)
+  $loginIndex = $source.IndexOf('if ($Login)', [System.StringComparison]::Ordinal)
+  $createIndex = $source.IndexOf('clasp create', [System.StringComparison]::Ordinal)
+  if ($callIndex -lt 0 -or $loginIndex -lt 0 -or $createIndex -lt 0 -or
+      $callIndex -gt $loginIndex -or $callIndex -gt $createIndex) {
+    throw "部署前檢查必須在登入與建立 GAS 專案前執行：$Path"
+  }
+}
+
+$projectRoot = Split-Path -Parent $PSScriptRoot
+@(
+  'deploy.ps1',
+  'deployment-menu.ps1',
+  'deployment-account.ps1',
+  'tmpl_auto_deploy_ps1.html',
+  'tmpl_auto_deploy_menu.html',
+  'tmpl_auto_deploy_account.html'
+) | ForEach-Object { Assert-PowerShellSyntax (Join-Path $projectRoot $_) }
+Assert-PreflightBeforeMutation (Join-Path $projectRoot 'deploy.ps1') 'Invoke-GeneratorPreflight'
+Assert-PreflightBeforeMutation (Join-Path $projectRoot 'tmpl_auto_deploy_ps1.html') 'Invoke-ActivityPreflight'
+
 try {
   New-Item -ItemType Directory -Path $testRoot | Out-Null
   Copy-Item -LiteralPath $sourceHelper -Destination (Join-Path $testRoot 'deployment-account.ps1')
@@ -45,7 +77,7 @@ try {
   Assert-Equal 'True' ([string](Test-DeploymentIdInClaspOutput 'DEPLOY_ALPHA' $sampleOutput)) '合法部署 ID 未通過驗證'
   Assert-Equal 'False' ([string](Test-DeploymentIdInClaspOutput 'DEPLOY' $sampleOutput)) '部分相符的錯誤部署 ID 不應通過'
 
-  Write-Host 'deployment profile tests: OK' -ForegroundColor Green
+  Write-Host 'deployment profile and syntax tests: OK' -ForegroundColor Green
 }
 finally {
   if (Test-Path -LiteralPath $testRoot) {

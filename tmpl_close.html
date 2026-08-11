@@ -18,8 +18,16 @@ p{font-size:17px;line-height:1.9;color:#4a3826}
   <div class="box">
     <div class="lamp">{{LOGO_TAG}}</div>
     <h1>{{EVENT_NAME_HTML}}</h1>
-    <p>{{CLOSED_MSG_HTML}}</p>
+    <p id="stateMsg">{{CLOSED_MSG_HTML}}</p>
     <div class="foot">{{ORG_NAME_HTML}}　敬啟</div>
   </div>
+  <script>
+  {{CFG_INJECT}}
+  (function(){
+    var state=CFG.REGISTRATION_STATE||{};
+    if(state.code==='upcoming') document.getElementById('stateMsg').textContent=state.message||'報名尚未開放';
+    else if(state.code==='invalid_schedule') document.getElementById('stateMsg').textContent=state.message||'報名時間設定異常，請聯絡主辦單位';
+  })();
+  </script>
 </body>
 </html>

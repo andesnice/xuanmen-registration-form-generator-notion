@@ -6,15 +6,52 @@
 //  絕不注入任何前端頁面。
 // ═══════════════════════════════════════════════════════════
 
+// datetime-local 設定一律以台北時間（UTC+8）判斷，不受 GAS 專案時區影響。
+function registrationTimeMs_(value) {
+  var m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!m) return null;
+  var y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]), h = Number(m[4]), mi = Number(m[5]);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59) return null;
+  var utc = Date.UTC(y, mo - 1, d, h - 8, mi);
+  var check = new Date(utc + 8 * 60 * 60 * 1000);
+  if (check.getUTCFullYear() !== y || check.getUTCMonth() !== mo - 1 || check.getUTCDate() !== d ||
+      check.getUTCHours() !== h || check.getUTCMinutes() !== mi) return null;
+  return utc;
+}
+
+function registrationState_(nowMs) {
+  var now = nowMs == null ? Date.now() : Number(nowMs);
+  var start = CONFIG.REGISTRATION_START ? registrationTimeMs_(CONFIG.REGISTRATION_START) : null;
+  var end = CONFIG.REGISTRATION_END ? registrationTimeMs_(CONFIG.REGISTRATION_END) : null;
+  if (CONFIG.CLOSED) return { open: false, code: 'manual_closed', message: '報名已截止' };
+  if ((CONFIG.REGISTRATION_START && start == null) || (CONFIG.REGISTRATION_END && end == null)) {
+    return { open: false, code: 'invalid_schedule', message: '報名時間設定異常，請聯絡主辦單位' };
+  }
+  if (start != null && end != null && end <= start) return { open: false, code: 'invalid_schedule', message: '報名時間設定異常，請聯絡主辦單位' };
+  if (start != null && now < start) return { open: false, code: 'upcoming', message: '報名尚未開放，開放時間：' + CONFIG.REGISTRATION_START.replace('T', ' ') + '（台北時間）' };
+  if (end != null && now >= end) return { open: false, code: 'closed', message: '報名已截止' };
+  return { open: true, code: 'open', message: '' };
+}
+
+function isActivePage_(page) {
+  var prop = page && page.properties && page.properties['報名狀態'];
+  return !prop || !prop.select || prop.select.name !== '已取消';
+}
+
+function isActiveRow_(row) {
+  return String((row && row['報名狀態']) || '有效') !== '已取消';
+}
+
 function doGet(e) {
   var page = (e && e.parameter && e.parameter.page) ? e.parameter.page : '';
 
   if (page === 'report') return render_('report', CONFIG.REPORT_TITLE);
   if (page === 'lookup') return render_('lookup', CONFIG.EVENT_NAME + ' 報名查詢');
 
-  // ?page=close 強制結束頁；無參數時 CLOSED=true 也導到結束頁；?page=form 強制報名表
-  var showClose = (page === 'close') || (page !== 'form' && CONFIG.CLOSED);
-  if (showClose) return render_('close', CONFIG.PAGE_TITLE + ' 圓滿感謝');
+  // ?page=close 強制狀態頁；無參數時依手動開關／排程導向；?page=form 僅供預覽。
+  var state = registrationState_();
+  var showClose = (page === 'close') || (page !== 'form' && !state.open);
+  if (showClose) return render_('close', state.code === 'upcoming' ? CONFIG.PAGE_TITLE + ' 尚未開放' : CONFIG.PAGE_TITLE + ' 圓滿感謝');
 
   return render_('index', CONFIG.PAGE_TITLE);
 }
@@ -87,7 +124,7 @@ function submitSelFields_() {
 function formatRows_(pages) {
   var NUM = numFields_();
   var TXT = fixedTxtFields_();
-  var SEL = (CONFIG.GROUP_FIELD ? [CONFIG.GROUP_FIELD] : []).concat(['繳款方式', '繳費狀況']);
+  var SEL = (CONFIG.GROUP_FIELD ? [CONFIG.GROUP_FIELD] : []).concat(['繳款方式', '繳費狀況', '報名狀態']);
   var CUSTOM = CONFIG.CUSTOM_FIELDS || [];
   var rows = (pages || []).filter(function (p) { return p && p.id && p.properties; }).map(function (p) {
     var P = p.properties;
@@ -96,6 +133,7 @@ function formatRows_(pages) {
       '功德主': gTitle_(P['功德主']),
       '電話': gPhone_(P['電話']),
       '報名時間': gDate_(P['報名時間']),
+      '取消時間': gDate_(P['取消時間']),
       '稽核': gChk_(P['稽核']),
       '確認匯款?': gChk_(P['確認匯款?']),
       '個資同意': gChk_(P['個資同意'])
@@ -140,7 +178,8 @@ function submitApi(payload) {
   var lock = null;
   try {
     payload = payload || {};
-    if (CONFIG.CLOSED) return { ok: false, error: '報名已截止' };
+    var state = registrationState_();
+    if (!state.open) return { ok: false, error: state.message };
     var MODE = CONFIG.REGISTRATION_MODE === 'family' ? 'family' : 'single';
     var items = CONFIG.QTY_ITEMS || [];
     var custom = CONFIG.CUSTOM_FIELDS || [];
@@ -225,9 +264,11 @@ function submitApi(payload) {
 
     // 鎖住「查重複／查名額／寫入」完整交易區段，避免併發請求同時通過檢查而超賣。
     lock = acquireCapacityLock_();
+    state = registrationState_();
+    if (!state.open) return { ok: false, error: state.message };
     var existing = notionQueryAll_();
     if (!existing.ok) return existing;
-    var pages = existing.pages;
+    var pages = (existing.pages || []).filter(isActivePage_);
     for (var d = 0; d < normalized.length; d++) {
       var dupName = normalized[d].name;
       var dup = pages.some(function (p) {
@@ -281,6 +322,7 @@ function buildSubmitProperties_(payload, entry, ctx) {
   var props = {
     '功德主': { title: [{ text: { content: entry.name } }] },
     '電話': pPhone_(ctx.phone),
+    '報名狀態': { select: { name: '有效' } },
     '繳費狀況': { select: { name: '未處理' } },
     '稽核': { checkbox: false },
     '個資同意': { checkbox: chkTrue(payload['個資同意']) },
@@ -308,7 +350,7 @@ function capacityLoadApi() {
   if (!hasLimit) return { ok: true, totalRemaining: null, itemRemaining: {} };
   var loaded = loadAllRows_();
   if (!loaded.ok) return loaded;
-  var rows = loaded.data || [];
+  var rows = (loaded.data || []).filter(isActiveRow_);
   var itemRemaining = {};
   (CONFIG.QTY_ITEMS || []).forEach(function (it) {
     var limit = Number((cap.items || {})[it.id] || 0);
@@ -333,19 +375,27 @@ function publicLookupApi(registrationId, phone) {
   if (!loaded.ok) return loaded;
   var rows = (loaded.data || []).filter(function (r) { return String(r['報名編號'] || '') === registrationId && normalizePhone_(r['電話']) === phone; });
   if (!rows.length) return { ok: false, error: '查無資料，請確認報名編號與電話' };
-  return { ok: true, data: rows, closed: !!CONFIG.CLOSED };
+  var state = registrationState_();
+  var cancelledCount = rows.filter(function (r) { return !isActiveRow_(r); }).length;
+  return { ok: true, data: rows, closed: !state.open, state: state,
+    cancelled: cancelledCount === rows.length, partiallyCancelled: cancelledCount > 0 && cancelledCount < rows.length };
 }
 
 function publicUpdateApi(registrationId, phone, payload) {
   var lock = null;
   try {
-    if (CONFIG.CLOSED) return { ok: false, error: '報名已截止，無法自行修改' };
+    var state = registrationState_();
+    if (!state.open) return { ok: false, error: state.message + '，無法自行修改' };
     lock = acquireCapacityLock_();
+    state = registrationState_();
+    if (!state.open) return { ok: false, error: state.message + '，無法自行修改' };
     var found = publicLookupApi(registrationId, phone);
     if (!found.ok) return found;
     phone = cleanPhone_(phone);
     payload = payload || {};
-    var rows = found.data || [], ids = rows.map(function (r) { return r.pageId; });
+    var rows = found.data || [];
+    if (rows.some(function (r) { return !isActiveRow_(r); })) return { ok: false, error: '此筆報名已取消，無法修改' };
+    var ids = rows.map(function (r) { return r.pageId; });
     var people = Array.isArray(payload.people) ? payload.people : [];
     if (people.length !== rows.length) return { ok: false, error: '功德主筆數不一致，請重新查詢' };
     var submittedIds = [];
@@ -371,7 +421,7 @@ function publicUpdateApi(registrationId, phone, payload) {
     if (ids.some(function (id) { return submittedIds.indexOf(id) < 0; })) return { ok: false, error: '功德主資料不一致，請重新查詢' };
     var allLoaded = loadAllRows_();
     if (!allLoaded.ok) return allLoaded;
-    var others = (allLoaded.data || []).filter(function (r) { return ids.indexOf(r.pageId) < 0; });
+    var others = (allLoaded.data || []).filter(function (r) { return isActiveRow_(r) && ids.indexOf(r.pageId) < 0; });
     for (var dd = 0; dd < people.length; dd++) {
       var duplicate = others.some(function (r) { return normalizePhone_(r['電話']) === phone && String(r['功德主'] || '').trim() === String(people[dd]['功德主'] || '').trim(); });
       if (duplicate) return { ok: false, error: '疑似重複報名：' + people[dd]['功德主'] + '（相同電話）' };
@@ -405,6 +455,40 @@ function publicUpdateApi(registrationId, phone, payload) {
       if (!updated.ok) return updated;
     }
     return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message ? err.message : err) };
+  } finally {
+    releaseLock_(lock);
+  }
+}
+
+// 取消整筆報名：保留 Notion 紀錄，將同一報名編號的所有功德主標為已取消。
+// 容量、查重與採購統計只計有效資料，因此取消成功後名額會立即釋出。
+function publicCancelApi(registrationId, phone) {
+  var lock = null;
+  try {
+    var state = registrationState_();
+    if (!state.open) return { ok: false, error: state.message + '，目前無法自行取消' };
+    lock = acquireCapacityLock_();
+    state = registrationState_();
+    if (!state.open) return { ok: false, error: state.message + '，目前無法自行取消' };
+    var found = publicLookupApi(registrationId, phone);
+    if (!found.ok) return found;
+    var rows = found.data || [];
+    if (rows.every(function (r) { return !isActiveRow_(r); })) return { ok: true, count: 0, alreadyCancelled: true };
+    var activeRows = rows.filter(isActiveRow_);
+    var cancelledAt = new Date().toISOString();
+    var props = {
+      '報名狀態': { select: { name: '已取消' } },
+      '取消時間': { date: { start: cancelledAt } }
+    };
+    for (var i = 0; i < activeRows.length; i++) {
+      if (i > 0) Utilities.sleep(350);
+      var res = notionApi_('patch', '/pages/' + activeRows[i].pageId, { properties: props });
+      if (!res.ok) return { ok: false, error: '取消失敗：' + res.error,
+        partial: rows.length > activeRows.length || i > 0, count: i };
+    }
+    return { ok: true, count: activeRows.length, cancelledAt: cancelledAt };
   } catch (err) {
     return { ok: false, error: String(err && err.message ? err.message : err) };
   } finally {

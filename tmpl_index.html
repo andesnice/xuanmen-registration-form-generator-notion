@@ -125,7 +125,7 @@ textarea{min-height:56px;resize:vertical}
   </div>
 
   <button class="submit" id="btnSubmit">送出報名</button>
-  <div style="text-align:center;margin-top:12px"><a href="?page=lookup" style="color:var(--red)">已有報名編號？查詢／修改報名</a></div>
+  <div style="text-align:center;margin-top:12px"><a id="lookupLink" href="#" target="_top" style="color:var(--red)">已有報名編號？查詢／修改報名</a></div>
   <div class="msg" id="msg"></div>
 </div>
 
@@ -151,6 +151,8 @@ if (CFG.EVENT_DATE) mp.push('📅 ' + CFG.EVENT_DATE);
 if (CFG.EVENT_PLACE) mp.push('📍 ' + CFG.EVENT_PLACE);
 $('metaLine').textContent = mp.join('　');
 if (CFG.EVENT_DESC) { $('descLine').textContent = CFG.EVENT_DESC; $('descCard').style.display = 'block'; }
+if (CFG.WEB_APP_URL) $('lookupLink').href = String(CFG.WEB_APP_URL) + '?page=lookup';
+else $('lookupLink').style.display = 'none';
 // 自訂 logo：有圖就換掉 🏮（CFG.LOGO 為 base64 data URL；用 img 標籤，src 由屬性帶入不會執行內容）
 if (CFG.LOGO) { var lg = $('lamp'); if (lg) { lg.textContent = ''; var im = document.createElement('img'); im.src = CFG.LOGO; im.alt = ''; lg.appendChild(im); } }
 

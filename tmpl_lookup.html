@@ -7,7 +7,7 @@
 .wrap{max-width:680px;margin:auto}h1{color:{{THEME_PRIMARY}};font-size:22px;text-align:center}.card{background:#fff;border:1px solid #e5d9c0;border-radius:12px;padding:16px;margin-bottom:12px}
 label{display:block;font-weight:700;font-size:14px;margin:9px 0 4px}input,select,textarea{width:100%;padding:10px;border:1px solid #e5d9c0;border-radius:8px;font-size:16px}textarea{min-height:60px}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.person{border:1px solid #e5d9c0;border-radius:9px;padding:12px;margin:10px 0;background:#fffdf8}.item{display:grid;grid-template-columns:1fr 130px;gap:8px;align-items:end}
-.btn{width:100%;padding:12px;border:0;border-radius:9px;background:{{THEME_PRIMARY}};color:#fff;font-size:16px;font-weight:800;cursor:pointer}.btn:disabled{opacity:.5}.msg{white-space:pre-wrap;text-align:center;padding:10px}.err{color:#a12}.ok{color:#176b2c}.hidden{display:none}.check{display:flex;gap:8px;align-items:center}.check input{width:20px}.hint{font-size:12px;color:#8a7a60}
+  .btn{width:100%;padding:12px;border:0;border-radius:9px;background:{{THEME_PRIMARY}};color:#fff;font-size:16px;font-weight:800;cursor:pointer}.btn.danger{margin-top:10px;background:#fff;color:#a12;border:1px solid #a12}.btn:disabled{opacity:.5}.msg{white-space:pre-wrap;text-align:center;padding:10px}.err{color:#a12}.ok{color:#176b2c}.hidden{display:none}.check{display:flex;gap:8px;align-items:center}.check input{width:20px}.hint{font-size:12px;color:#8a7a60}.status{font-weight:800;text-align:center;padding:10px;border-radius:8px;background:#f8f1e4;margin-bottom:10px}.status.cancelled{color:#a12;background:#fff0f0}
 @media(max-width:560px){.row{grid-template-columns:1fr}}
 </style>
 </head>
@@ -21,15 +21,17 @@ label{display:block;font-weight:700;font-size:14px;margin:9px 0 4px}input,select
     <div id="gateMsg" class="msg"></div>
   </div>
   <div id="editor" class="hidden">
+    <div id="regStatus" class="status"></div>
     <div class="card"><h2>共用報名資料</h2><div id="shared"></div></div>
     <div class="card"><h2>功德主與品項</h2><div id="people"></div><div id="grandTotal" style="font-weight:800;text-align:right;color:{{THEME_PRIMARY}}"></div></div>
     <button class="btn" id="saveBtn" onclick="save()">儲存修改</button>
+    <button class="btn danger" id="cancelBtn" onclick="cancelRegistration()">取消整筆報名並釋出名額</button>
     <div id="saveMsg" class="msg"></div>
   </div>
 </div>
 <script>
 {{CFG_INJECT}}
-var ROWS=[], CLOSED=false;
+var ROWS=[], CLOSED=false, CANCELLED=false, PARTIAL=false, STATE={};
 function $(id){return document.getElementById(id)}
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function money(n){return 'NT$ '+Number(n||0).toLocaleString('en-US')}
@@ -38,7 +40,7 @@ function lookup(){
   $('gateMsg').textContent='查詢中…';
   google.script.run.withSuccessHandler(function(r){
     if(!r||!r.ok){$('gateMsg').className='msg err';$('gateMsg').textContent=(r&&r.error)||'查詢失敗';return}
-    ROWS=r.data||[];CLOSED=!!r.closed;$('gateMsg').textContent='';render();
+    ROWS=r.data||[];CLOSED=!!r.closed;CANCELLED=!!r.cancelled;PARTIAL=!!r.partiallyCancelled;STATE=r.state||{};$('gateMsg').textContent='';render();
   }).withFailureHandler(function(e){$('gateMsg').className='msg err';$('gateMsg').textContent=e.message}).publicLookupApi($('reg').value.trim(),$('phone').value.trim());
 }
 function sharedInput(k,v,type,opts){
@@ -61,7 +63,15 @@ function render(){
     return '<div class="person" data-page="'+esc(row.pageId)+'"><strong>功德主 '+(i+1)+'</strong>'+sharedInput('功德主',row['功德主'])+
       (CFG.QTY_ITEMS||[]).map(function(it){var amount=it.pricingMode==='donation'||it.pricingMode==='minimum';return '<div class="item"><label>'+esc(it.id)+(amount?'（金額）':'（數量）')+'</label><input data-item="'+esc(it.id)+'" inputmode="numeric" value="'+esc(row[it.id]||0)+'"></div>'}).join('')+'</div>';
   }).join('');
-  $('editor').className='';if(CLOSED){$('saveBtn').disabled=true;$('saveMsg').textContent='報名已截止，目前僅供查詢。'}recalc();
+  $('editor').className='';
+  $('regStatus').className='status'+(CANCELLED||PARTIAL?' cancelled':'');
+  $('regStatus').textContent=CANCELLED?'此筆報名已取消，名額已釋出。':(PARTIAL?'部分資料已取消，請按下方按鈕完成整筆取消。':'報名狀態：有效');
+  $('saveBtn').disabled=CLOSED||CANCELLED||PARTIAL;$('cancelBtn').disabled=CLOSED||CANCELLED;
+  if(CANCELLED)$('saveMsg').textContent='已取消的報名僅供查詢。';
+  else if(PARTIAL)$('saveMsg').textContent='資料狀態不一致，無法修改；可再次執行取消完成處理。';
+  else if(CLOSED)$('saveMsg').textContent=(STATE.message||'報名已截止')+'，目前僅供查詢。';
+  else $('saveMsg').textContent='';
+  recalc();
   document.querySelectorAll('[data-item]').forEach(function(x){x.oninput=recalc});
 }
 function toggleRemit(){var p=document.querySelector('[data-shared="繳款方式"]');$('remitEdit').style.display=p&&p.value==='匯款'?'block':'none'}
@@ -72,6 +82,15 @@ function save(){
   var people=[];document.querySelectorAll('.person').forEach(function(root){var x={pageId:root.dataset.page,'功德主':root.querySelector('[data-shared="功德主"]').value.trim()};root.querySelectorAll('[data-item]').forEach(function(el){x[el.dataset.item]=parseInt(el.value,10)||0});people.push(x)});
   $('saveBtn').disabled=true;$('saveMsg').className='msg';$('saveMsg').textContent='儲存中…';
   google.script.run.withSuccessHandler(function(r){$('saveBtn').disabled=false;if(!r||!r.ok){$('saveMsg').className='msg err';$('saveMsg').textContent=(r&&r.error)||'儲存失敗';return}$('saveMsg').className='msg ok';$('saveMsg').textContent='修改完成'}).withFailureHandler(function(e){$('saveBtn').disabled=false;$('saveMsg').className='msg err';$('saveMsg').textContent=e.message}).publicUpdateApi($('reg').value.trim(),$('phone').value.trim(),{shared:shared,people:people});
+}
+function cancelRegistration(){
+  if(CANCELLED||CLOSED)return;
+  if(!confirm('確定取消整筆報名？家庭代報會一併取消所有功德主，成功後名額會立即釋出。'))return;
+  $('cancelBtn').disabled=true;$('saveBtn').disabled=true;$('saveMsg').className='msg';$('saveMsg').textContent='取消中…';
+  google.script.run.withSuccessHandler(function(r){
+    if(!r||!r.ok){if(r&&r.partial){PARTIAL=true;render()}else{$('cancelBtn').disabled=false;$('saveBtn').disabled=false}$('saveMsg').className='msg err';$('saveMsg').textContent=((r&&r.error)||'取消失敗')+(r&&r.partial?'；部分資料已取消，請再次執行取消以完成整筆處理。':'');return}
+    CANCELLED=true;PARTIAL=false;ROWS.forEach(function(row){row['報名狀態']='已取消';row['取消時間']=r.cancelledAt||row['取消時間']||''});$('saveMsg').className='msg ok';$('saveMsg').textContent=r.alreadyCancelled?'此筆報名先前已取消。':'取消完成，名額已釋出。';render();
+  }).withFailureHandler(function(e){$('cancelBtn').disabled=false;$('saveBtn').disabled=false;$('saveMsg').className='msg err';$('saveMsg').textContent=e.message}).publicCancelApi($('reg').value.trim(),$('phone').value.trim());
 }
 </script>
 </body>

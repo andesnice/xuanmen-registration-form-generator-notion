@@ -11,9 +11,11 @@
 // ═══════════════════════════════════════════════════════════
 
 var GEN = {
+  SCHEMA_VERSION: 2,
   BANK: { bank: '', acct: '', name: '' },
   PAY_OPTIONS: ['現金', '匯款', '刷卡', 'LinePay', '功德系統'],
   PAY_STATUS: ['未處理', '未繳款', '應收', '已繳款'],
+  REG_STATUS: ['有效', '已取消'],
   GROUP_DEFAULT: ['本宮', '友宮', '其他'],
   REGISTRATION_MODES: ['single', 'family'],
   CUSTOM_FIELD_TYPES: ['text', 'select', 'checkbox', 'date'],
@@ -24,7 +26,7 @@ var GEN = {
   // Notion DB 固定文字/數字欄（品項欄另外動態加）
   TXT_FIELDS: ['地址', '匯款日期', '帳號後五碼', '備註', '報名編號'],
   RESERVED_FIELDS: ['功德主', '聯絡人', '家庭編號', '報名編號', '電話', '地址', '繳款方式', '繳費狀況', '匯款日期', '帳號後五碼',
-    '匯款金額', '確認匯款?', '稽核', '個資同意', '備註', '總金額', '報名時間']
+    '匯款金額', '確認匯款?', '稽核', '個資同意', '備註', '總金額', '報名時間', '報名狀態', '取消時間']
 };
 
 function doGet() {
@@ -283,6 +285,8 @@ function buildDbProperties_(p) {
     '電話': { phone_number: {} },
     '地址': { rich_text: {} },
     '報名編號': { rich_text: {} },
+    '報名狀態': { select: { options: GEN.REG_STATUS.map(nameOpt_) } },
+    '取消時間': { date: {} },
     '繳款方式': { select: { options: p.payOptions.map(nameOpt_) } },
     '繳費狀況': { select: { options: GEN.PAY_STATUS.map(nameOpt_) } },
     '匯款日期': { rich_text: {} },
@@ -376,6 +380,8 @@ function normalizeCfg_(p) {
     PAGE_TITLE: String(p.pageTitle || (p.eventName + ' 報名')).trim(),
     REPORT_TITLE: [String(p.orgName || '').trim(), String(p.eventName || '活動').trim() + ' 後台'].filter(function(v){ return v; }).join('｜'),
     EVENT_DATE: String(p.eventDate || '').trim(),
+    REGISTRATION_START: String(p.registrationStart || '').trim(),
+    REGISTRATION_END: String(p.registrationEnd || '').trim(),
     EVENT_PLACE: String(p.eventPlace || '').trim(),
     EVENT_DESC: String(p.eventDesc || '').trim(),
     LOGO: normalizeLogo_(p.logo),
@@ -404,6 +410,11 @@ function validateCfg_(cfg, requireDb) {
   if (!cfg.items.length) return '至少要一個品項';
   if (GEN.REGISTRATION_MODES.indexOf(cfg.registrationMode) < 0) return '報名模式不正確';
   if (cfg.LOGO && cfg.LOGO.length > 7500000) return 'Logo 圖片過大（上限約 5MB），請換小一點的圖或先壓縮';
+  var startMs = cfg.REGISTRATION_START ? registrationLocalMs_(cfg.REGISTRATION_START) : null;
+  var endMs = cfg.REGISTRATION_END ? registrationLocalMs_(cfg.REGISTRATION_END) : null;
+  if (cfg.REGISTRATION_START && startMs == null) return '報名開放時間格式不正確';
+  if (cfg.REGISTRATION_END && endMs == null) return '報名截止時間格式不正確';
+  if (startMs != null && endMs != null && endMs <= startMs) return '報名截止時間必須晚於開放時間';
   if (cfg.hasGroup) {
     if (!cfg.groupField) return '缺所屬單位欄位名稱';
     if (cfg.groupField.length > 30) return '所屬單位欄位名稱不可超過 30 字';
@@ -442,8 +453,21 @@ function validateCfg_(cfg, requireDb) {
   return '';
 }
 
+// datetime-local 一律視為台北時間（UTC+8），並嚴格檢查日曆日期。
+function registrationLocalMs_(value) {
+  var m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!m) return null;
+  var y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]), h = Number(m[4]), mi = Number(m[5]);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59) return null;
+  var utc = Date.UTC(y, mo - 1, d, h - 8, mi);
+  var check = new Date(utc + 8 * 60 * 60 * 1000);
+  if (check.getUTCFullYear() !== y || check.getUTCMonth() !== mo - 1 || check.getUTCDate() !== d ||
+      check.getUTCHours() !== h || check.getUTCMinutes() !== mi) return null;
+  return utc;
+}
+
 function schemaKey_(cfg) {
-  return JSON.stringify({ registrationMode: cfg.registrationMode, payOptions: cfg.payOptions, hasGroup: cfg.hasGroup, groupField: cfg.hasGroup ? cfg.groupField : '', groupOptions: cfg.hasGroup ? cfg.groupOptions : [],
+  return JSON.stringify({ schemaVersion: GEN.SCHEMA_VERSION, registrationMode: cfg.registrationMode, payOptions: cfg.payOptions, hasGroup: cfg.hasGroup, groupField: cfg.hasGroup ? cfg.groupField : '', groupOptions: cfg.hasGroup ? cfg.groupOptions : [],
     items: cfg.items.map(function (it) { return {name:it.name, pricingMode:it.pricingMode}; }), customFields: cfg.customFields });
 }
 
@@ -469,6 +493,8 @@ function buildFiles_(cfg) {
     PAGE_TITLE_JS: JSON.stringify(cfg.PAGE_TITLE),
     REPORT_TITLE_JS: JSON.stringify(cfg.REPORT_TITLE),
     EVENT_DATE_JS: JSON.stringify(cfg.EVENT_DATE),
+    REGISTRATION_START_JS: JSON.stringify(cfg.REGISTRATION_START),
+    REGISTRATION_END_JS: JSON.stringify(cfg.REGISTRATION_END),
     EVENT_PLACE_JS: JSON.stringify(cfg.EVENT_PLACE),
     EVENT_DESC_JS: JSON.stringify(cfg.EVENT_DESC),
     REMIT_DEADLINE_JS: JSON.stringify(cfg.REMIT_DEADLINE),
@@ -485,6 +511,7 @@ function buildFiles_(cfg) {
     GROUP_OPTIONS_JS: cfg.hasGroup ? jsArr_(cfg.groupOptions) : 'null',
     PAY_OPTIONS_JS: JSON.stringify(cfg.payOptions),
     PAY_STATUS_JS: JSON.stringify(GEN.PAY_STATUS),
+    REG_STATUS_JS: JSON.stringify(GEN.REG_STATUS),
     THEME_PRIMARY: cfg.THEME_PRIMARY,
     THEME_GOLD: cfg.THEME_GOLD,
     EVENT_NAME_HTML: html_(cfg.EVENT_NAME),
@@ -495,6 +522,7 @@ function buildFiles_(cfg) {
   };
   var idxInject = "var CFG = <?!= JSON.stringify(getClientConfig('index')) ?>;";
   var repInject = "var CFG = <?!= JSON.stringify(getClientConfig('report')) ?>;";
+  var closeInject = "var CFG = <?!= JSON.stringify(getClientConfig('close')) ?>;";
 
   return [
     { name: 'Config.gs', content: fill_(tpl_('tmpl_Config'), map) },
@@ -507,7 +535,7 @@ function buildFiles_(cfg) {
     { name: 'index.html', content: fill_(tpl_('tmpl_index'), extend_(map, { CFG_INJECT: idxInject })) },
     { name: 'report.html', content: fill_(tpl_('tmpl_report'), extend_(map, { CFG_INJECT: repInject })) },
     { name: 'lookup.html', content: fill_(tpl_('tmpl_lookup'), extend_(map, { CFG_INJECT: idxInject })) },
-    { name: 'close.html', content: fill_(tpl_('tmpl_close'), map) },
+    { name: 'close.html', content: fill_(tpl_('tmpl_close'), extend_(map, { CFG_INJECT: closeInject })) },
     // 一鍵部署（雙擊 .bat → 選單 → deploy.ps1）；每個 Google 帳號隔離 Script/部署 ID，bat 需 CRLF
     { name: '自動部署.bat', content: rawTpl_('tmpl_auto_deploy_bat').replace(/\r?\n/g, '\r\n') },
     { name: 'deployment-account.ps1', content: rawTpl_('tmpl_auto_deploy_account') },
@@ -526,7 +554,14 @@ function rawTpl_(name) {
     .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
     .replace(/&amp;/g, '&');
 }
-function fill_(s, map) { Object.keys(map).forEach(function (k) { s = s.split('{{' + k + '}}').join(map[k]); }); return s; }
+function fill_(s, map) {
+  return String(s || '').replace(/\{\{([A-Z0-9_]+)\}\}/g, function (token, key) {
+    if (!Object.prototype.hasOwnProperty.call(map, key)) {
+      throw new Error('模板缺少替換值：' + key);
+    }
+    return String(map[key]);
+  });
+}
 function extend_(a, b) { var o = {}; Object.keys(a).forEach(function (k) { o[k] = a[k]; }); Object.keys(b).forEach(function (k) { o[k] = b[k]; }); return o; }
 function qstr_(s) { return JSON.stringify(String(s)); }
 function jsArr_(arr) { return '[' + arr.map(qstr_).join(', ') + ']'; }
@@ -551,7 +586,7 @@ function buildSchemaDoc_(cfg) {
     '> 此版採單一 data source 模型；請勿在同一 DB 新增第二個 data source。', '',
     '## 固定欄', '',
     '| 欄位 | 型別 |', '|------|------|',
-    '| 功德主 | title |', '| 報名編號 | rich_text |', '| 電話 | phone_number |', '| 地址 | rich_text |'];
+    '| 功德主 | title |', '| 報名編號 | rich_text |', '| 報名狀態 | select（有效／已取消） |', '| 取消時間 | date |', '| 電話 | phone_number |', '| 地址 | rich_text |'];
   if (cfg.registrationMode === 'family') {
     lines.push('| 聯絡人 | rich_text |', '| 家庭編號 | rich_text（同次送出的功德主共用） |');
   }
@@ -582,6 +617,11 @@ function buildSchemaDoc_(cfg) {
     lines.push('', '## 名額限制', '', '- 總名額：' + (cfg.totalCapacity || '不限'));
     cfg.items.forEach(function(it){ if(it.limit) lines.push('- ' + it.name + '：上限 ' + it.limit + ' ' + it.unit); });
   }
+  lines.push('', '## 報名時間與取消', '',
+    '- 自動開放：' + (cfg.REGISTRATION_START ? cfg.REGISTRATION_START + '（台北時間）' : '未設定，部署後立即開放'),
+    '- 自動截止：' + (cfg.REGISTRATION_END ? cfg.REGISTRATION_END + '（台北時間）' : '未設定'),
+    '- `CONFIG.CLOSED = true` 是最高優先的手動截止開關。',
+    '- 信眾取消時不刪除頁面；改為「報名狀態＝已取消」並寫入取消時間。已取消資料不計入名額與採購統計。');
   return lines.join('\n') + '\n';
 }
 

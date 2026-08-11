@@ -41,10 +41,42 @@ function Assert-ClaspSuccess($action) {
   }
 }
 
+function Invoke-GeneratorPreflight {
+  Write-Host '> 部署前檢查：產生器語法、產物與部署腳本...' -ForegroundColor Cyan
+  if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Fail '找不到 Node.js，無法執行部署前語法檢查。' }
+  $required = @('Code.gs','ui.html','appsscript.json','tests\notion-template-safety.tests.cjs','tests\deployment-profile.tests.ps1')
+  foreach ($name in $required) {
+    if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $name))) { Fail "部署前檢查失敗：缺少 $name" }
+  }
+  try { $manifest = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'appsscript.json') -Raw | ConvertFrom-Json }
+  catch { Fail "部署前檢查失敗：appsscript.json 不是有效 JSON。$($_.Exception.Message)" }
+  if ($manifest.timeZone -ne 'Asia/Taipei' -or $manifest.runtimeVersion -ne 'V8' -or
+      $manifest.webapp.access -ne 'MYSELF' -or $manifest.webapp.executeAs -ne 'USER_DEPLOYING') {
+    Fail '部署前檢查失敗：appsscript.json 的時區、V8 或 Web App 權限不符合產生器規格。'
+  }
+  & node (Join-Path $PSScriptRoot 'tests\notion-template-safety.tests.cjs')
+  if ($LASTEXITCODE -ne 0) { Fail "部署前檢查失敗：產生器／產物測試錯誤（代碼 $LASTEXITCODE）。" }
+  & pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'tests\deployment-profile.tests.ps1')
+  if ($LASTEXITCODE -ne 0) { Fail "部署前檢查失敗：部署腳本測試錯誤（代碼 $LASTEXITCODE）。" }
+  Write-Host '  部署前檢查通過。' -ForegroundColor Green
+}
+
 # 1) 確認 clasp 已安裝
 if (-not (Get-Command clasp -ErrorAction SilentlyContinue)) {
   Fail "找不到 clasp。請先安裝： npm install -g @google/clasp"
 }
+$claspVersionText = (& clasp --version 2>&1 | Out-String).Trim()
+$claspVersionMatch = [regex]::Match($claspVersionText, '\d+\.\d+\.\d+')
+if ($LASTEXITCODE -ne 0 -or -not $claspVersionMatch.Success) {
+  Fail '無法確認 clasp 版本。請重新安裝：npm install -g @google/clasp@3'
+}
+$claspVersion = [version]$claspVersionMatch.Value
+if ($claspVersion.Major -ne 3 -or $claspVersion -lt [version]'3.3.0') {
+  Fail "目前 clasp $claspVersion 未經此部署流程驗證；請安裝 3.3.x：npm install -g @google/clasp@3.3.0"
+}
+Write-Host "  clasp $claspVersion（版本檢查通過）" -ForegroundColor DarkGray
+
+Invoke-GeneratorPreflight
 
 # 2) 需要時登入（開瀏覽器；一次性）
 if ($Login) {
