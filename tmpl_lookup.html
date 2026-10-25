@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <style>
-*,*::before,*::after{box-sizing:border-box}body{margin:0;font-family:'Microsoft JhengHei',sans-serif;background:#f5f0e8;color:#2c1a0e;padding:18px 12px}
-.wrap{max-width:680px;margin:auto}h1{color:{{THEME_PRIMARY}};font-size:22px;text-align:center}.card{background:#fff;border:1px solid #e5d9c0;border-radius:12px;padding:16px;margin-bottom:12px}
-label{display:block;font-weight:700;font-size:14px;margin:9px 0 4px}input,select,textarea{width:100%;padding:10px;border:1px solid #e5d9c0;border-radius:8px;font-size:16px}textarea{min-height:60px}
+*,*::before,*::after{box-sizing:border-box}:root{--bg:{{THEME_BG}};--radius:{{CARD_RADIUS}};--font-size:{{FONT_SIZE}}}body{margin:0;font-family:'Microsoft JhengHei',sans-serif;background:var(--bg);color:#2c1a0e;padding:18px 12px;font-size:var(--font-size)}body.shadow-none .card{box-shadow:none}body.shadow-soft .card{box-shadow:0 2px 10px rgba(0,0,0,.07)}body.shadow-strong .card{box-shadow:0 10px 24px rgba(0,0,0,.14)}
+ .wrap{max-width:680px;margin:auto}h1{color:{{THEME_PRIMARY}};font-size:22px;text-align:center}.card{background:#fff;border:1px solid #e5d9c0;border-radius:var(--radius);padding:16px;margin-bottom:12px}
+label{display:block;font-weight:700;font-size:calc(var(--font-size) - 2px);margin:9px 0 4px}input,select,textarea,button{font-size:var(--font-size)}input,select,textarea{width:100%;padding:10px;border:1px solid #e5d9c0;border-radius:8px}textarea{min-height:60px}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.person{border:1px solid #e5d9c0;border-radius:9px;padding:12px;margin:10px 0;background:#fffdf8}.item{display:grid;grid-template-columns:1fr 130px;gap:8px;align-items:end}
-  .btn{width:100%;padding:12px;border:0;border-radius:9px;background:{{THEME_PRIMARY}};color:#fff;font-size:16px;font-weight:800;cursor:pointer}.btn.danger{margin-top:10px;background:#fff;color:#a12;border:1px solid #a12}.btn:disabled{opacity:.5}.msg{white-space:pre-wrap;text-align:center;padding:10px}.err{color:#a12}.ok{color:#176b2c}.hidden{display:none}.check{display:flex;gap:8px;align-items:center}.check input{width:20px}.hint{font-size:12px;color:#8a7a60}.status{font-weight:800;text-align:center;padding:10px;border-radius:8px;background:#f8f1e4;margin-bottom:10px}.status.cancelled{color:#a12;background:#fff0f0}
+  .btn{width:100%;padding:12px;border:0;border-radius:9px;background:{{THEME_PRIMARY}};color:#fff;font-size:var(--font-size);font-weight:800;cursor:pointer}.btn.danger{margin-top:10px;background:#fff;color:#a12;border:1px solid #a12}.btn:disabled{opacity:.5}.msg{white-space:pre-wrap;text-align:center;padding:10px}.err{color:#a12}.ok{color:#176b2c}.hidden{display:none}.check{display:flex;gap:8px;align-items:center}.check input{width:20px}.hint{font-size:calc(var(--font-size) - 4px);color:#8a7a60}.status{font-weight:800;text-align:center;padding:10px;border-radius:8px;background:#f8f1e4;margin-bottom:10px}.status.cancelled{color:#a12;background:#fff0f0}
 @media(max-width:560px){.row{grid-template-columns:1fr}}
 </style>
 </head>
-<body>
+<body class="shadow-{{CARD_SHADOW}}">
 <div class="wrap">
   <h1 id="title"></h1>
   <div class="card" id="gate">
@@ -23,7 +23,14 @@ label{display:block;font-weight:700;font-size:14px;margin:9px 0 4px}input,select
   <div id="editor" class="hidden">
     <div id="regStatus" class="status"></div>
     <div class="card"><h2>共用報名資料</h2><div id="shared"></div></div>
-    <div class="card"><h2>功德主與品項</h2><div id="people"></div><div id="grandTotal" style="font-weight:800;text-align:right;color:{{THEME_PRIMARY}}"></div></div>
+    <div class="card"><h2>{{PERSON_LABEL_HTML}}與{{ITEMS_LABEL_HTML}}</h2><div id="people"></div><div id="grandTotal" style="font-weight:800;text-align:right;color:{{THEME_PRIMARY}}"></div></div>
+    <div class="card hidden" id="resendCard">
+      <h2>報名確認信</h2>
+      <label>Email</label><input id="resendEmail" type="email" placeholder="收報名確認信的信箱">
+      <button class="btn" style="margin-top:10px" onclick="resendMail()">重寄報名確認信到此 Email</button>
+      <div class="hint">若此 Email 與先前不同，會一併更新為新的收件信箱。</div>
+      <div id="resendMsg" class="msg"></div>
+    </div>
     <button class="btn" id="saveBtn" onclick="save()">儲存修改</button>
     <button class="btn danger" id="cancelBtn" onclick="cancelRegistration()">取消整筆報名並釋出名額</button>
     <div id="saveMsg" class="msg"></div>
@@ -31,6 +38,7 @@ label{display:block;font-weight:700;font-size:14px;margin:9px 0 4px}input,select
 </div>
 <script>
 {{CFG_INJECT}}
+var L=CFG.LABELS||{PERSON:'報名人',CONTACT:'聯絡人',ITEMS:'報名項目',PAYMENT:'付款方式',NOTE:'備註',TOTAL:'總金額'};
 var ROWS=[], CLOSED=false, CANCELLED=false, PARTIAL=false, STATE={};
 function $(id){return document.getElementById(id)}
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
@@ -43,24 +51,25 @@ function lookup(){
     ROWS=r.data||[];CLOSED=!!r.closed;CANCELLED=!!r.cancelled;PARTIAL=!!r.partiallyCancelled;STATE=r.state||{};$('gateMsg').textContent='';render();
   }).withFailureHandler(function(e){$('gateMsg').className='msg err';$('gateMsg').textContent=e.message}).publicLookupApi($('reg').value.trim(),$('phone').value.trim());
 }
-function sharedInput(k,v,type,opts){
-  if(type==='checkbox')return '<label class="check"><input type="checkbox" data-shared="'+esc(k)+'" data-bool="1"'+(v===true?' checked':'')+'><span>'+esc(k)+'</span></label>';
-  if(type==='select')return '<label>'+esc(k)+'</label><select data-shared="'+esc(k)+'"><option value=""></option>'+(opts||[]).map(function(x){return '<option'+(x===v?' selected':'')+'>'+esc(x)+'</option>'}).join('')+'</select>';
-  return '<label>'+esc(k)+'</label><input '+(type==='date'?'type="date"':'')+' data-shared="'+esc(k)+'" value="'+esc(type==='date'?String(v||'').slice(0,10):(v||''))+'">';
+function sharedInput(k,v,type,opts,label){
+  label=label||k;
+  if(type==='checkbox')return '<label class="check"><input type="checkbox" data-shared="'+esc(k)+'" data-bool="1"'+(v===true?' checked':'')+'><span>'+esc(label)+'</span></label>';
+  if(type==='select')return '<label>'+esc(label)+'</label><select data-shared="'+esc(k)+'"><option value=""></option>'+(opts||[]).map(function(x){return '<option'+(x===v?' selected':'')+'>'+esc(x)+'</option>'}).join('')+'</select>';
+  return '<label>'+esc(label)+'</label><input '+(type==='date'?'type="date"':'')+' data-shared="'+esc(k)+'" value="'+esc(type==='date'?String(v||'').slice(0,10):(v||''))+'">';
 }
 function render(){
   if(!ROWS.length)return;var r=ROWS[0],h='';
-  if(CFG.REGISTRATION_MODE==='family')h+=sharedInput('聯絡人',r['聯絡人']);
+  if(CFG.REGISTRATION_MODE==='family')h+=sharedInput('聯絡人',r['聯絡人'],null,null,L.CONTACT);
   h+=sharedInput('地址',r['地址']);
   if(CFG.GROUP_FIELD&&CFG.GROUP_OPTIONS)h+=sharedInput(CFG.GROUP_FIELD,r[CFG.GROUP_FIELD],'select',CFG.GROUP_OPTIONS);
   (CFG.CUSTOM_FIELDS||[]).forEach(function(f){h+='<div data-condition="'+esc(f.showWhenItem||'')+'">'+sharedInput(f.name,r[f.name],f.type,f.options)+'</div>'});
-  h+=sharedInput('繳款方式',r['繳款方式'],'select',CFG.PAY_OPTIONS);
+  h+=sharedInput('繳款方式',r['繳款方式'],'select',CFG.PAY_OPTIONS,L.PAYMENT);
   h+='<div id="remitEdit">'+sharedInput('匯款日期',r['匯款日期'])+sharedInput('帳號後五碼',r['帳號後五碼'])+sharedInput('匯款金額',r['匯款金額'])+'</div>';
-  h+='<label>備註</label><textarea data-shared="備註">'+esc(r['備註']||'')+'</textarea>';
+  h+='<label>'+esc(L.NOTE)+'</label><textarea data-shared="備註">'+esc(r['備註']||'')+'</textarea>';
   $('shared').innerHTML=h;
   var pay=document.querySelector('[data-shared="繳款方式"]');pay.onchange=toggleRemit;toggleRemit();
   $('people').innerHTML=ROWS.map(function(row,i){
-    return '<div class="person" data-page="'+esc(row.pageId)+'"><strong>功德主 '+(i+1)+'</strong>'+sharedInput('功德主',row['功德主'])+
+    return '<div class="person" data-page="'+esc(row.pageId)+'"><strong>'+esc(L.PERSON)+' '+(i+1)+'</strong>'+sharedInput('功德主',row['功德主'],null,null,L.PERSON)+
       (CFG.QTY_ITEMS||[]).map(function(it){var amount=it.pricingMode==='donation'||it.pricingMode==='minimum';return '<div class="item"><label>'+esc(it.id)+(amount?'（金額）':'（數量）')+'</label><input data-item="'+esc(it.id)+'" inputmode="numeric" value="'+esc(row[it.id]||0)+'"></div>'}).join('')+'</div>';
   }).join('');
   $('editor').className='';
@@ -73,10 +82,21 @@ function render(){
   else $('saveMsg').textContent='';
   recalc();
   document.querySelectorAll('[data-item]').forEach(function(x){x.oninput=recalc});
+  if(CFG.NOTIFY_ON&&!CANCELLED){$('resendCard').className='card';$('resendEmail').value=r['Email']||'';}
+  else{$('resendCard').className='card hidden';}
+}
+function resendMail(){
+  var email=$('resendEmail').value.trim();
+  if(!email){$('resendMsg').className='msg err';$('resendMsg').textContent='請填 Email';return}
+  $('resendMsg').className='msg';$('resendMsg').textContent='寄送中…';
+  google.script.run.withSuccessHandler(function(r){
+    if(!r||!r.ok){$('resendMsg').className='msg err';$('resendMsg').textContent=(r&&r.error)||'寄送失敗';return}
+    $('resendMsg').className='msg ok';$('resendMsg').textContent='✅ 已寄出報名確認信，請至信箱查收（可能在垃圾信匣）。';
+  }).withFailureHandler(function(e){$('resendMsg').className='msg err';$('resendMsg').textContent=e.message}).publicResendMailApi($('reg').value.trim(),$('phone').value.trim(),email);
 }
 function toggleRemit(){var p=document.querySelector('[data-shared="繳款方式"]');$('remitEdit').style.display=p&&p.value==='匯款'?'block':'none'}
 function rowTotal(root){var t=0;(CFG.QTY_ITEMS||[]).forEach(function(it){var el=Array.prototype.slice.call(root.querySelectorAll('[data-item]')).filter(function(x){return x.dataset.item===it.id})[0],v=Number(el?el.value:0)||0;if(!it.pricingMode||it.pricingMode==='fixed')t+=v*(it.price||0);else if(it.pricingMode==='donation'||it.pricingMode==='minimum')t+=v});return t}
-function recalc(){var t=0,selected={};document.querySelectorAll('.person').forEach(function(p){t+=rowTotal(p);p.querySelectorAll('[data-item]').forEach(function(x){if(Number(x.value)>0)selected[x.dataset.item]=true})});$('grandTotal').textContent='總金額 '+money(t);document.querySelectorAll('[data-condition]').forEach(function(x){x.style.display=!x.dataset.condition||selected[x.dataset.condition]?'block':'none'})}
+function recalc(){var t=0,selected={};document.querySelectorAll('.person').forEach(function(p){t+=rowTotal(p);p.querySelectorAll('[data-item]').forEach(function(x){if(Number(x.value)>0)selected[x.dataset.item]=true})});$('grandTotal').textContent=L.TOTAL+' '+money(t);document.querySelectorAll('[data-condition]').forEach(function(x){x.style.display=!x.dataset.condition||selected[x.dataset.condition]?'block':'none'})}
 function save(){
   var shared={};document.querySelectorAll('[data-shared]').forEach(function(el){shared[el.dataset.shared]=el.dataset.bool?el.checked:el.value});
   var people=[];document.querySelectorAll('.person').forEach(function(root){var x={pageId:root.dataset.page,'功德主':root.querySelector('[data-shared="功德主"]').value.trim()};root.querySelectorAll('[data-item]').forEach(function(el){x[el.dataset.item]=parseInt(el.value,10)||0});people.push(x)});
@@ -85,7 +105,7 @@ function save(){
 }
 function cancelRegistration(){
   if(CANCELLED||CLOSED)return;
-  if(!confirm('確定取消整筆報名？家庭代報會一併取消所有功德主，成功後名額會立即釋出。'))return;
+  if(!confirm('確定取消整筆報名？團體／家庭代報會一併取消所有報名人，成功後名額會立即釋出。'))return;
   $('cancelBtn').disabled=true;$('saveBtn').disabled=true;$('saveMsg').className='msg';$('saveMsg').textContent='取消中…';
   google.script.run.withSuccessHandler(function(r){
     if(!r||!r.ok){if(r&&r.partial){PARTIAL=true;render()}else{$('cancelBtn').disabled=false;$('saveBtn').disabled=false}$('saveMsg').className='msg err';$('saveMsg').textContent=((r&&r.error)||'取消失敗')+(r&&r.partial?'；部分資料已取消，請再次執行取消以完成整筆處理。':'');return}

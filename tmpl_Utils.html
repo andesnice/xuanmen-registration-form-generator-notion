@@ -107,6 +107,20 @@ function cleanRemitDate_(value, required) {
   return s;
 }
 
+// Email 選填；有填才驗證格式。空字串代表未填（required=false 時回 ''）。
+function cleanEmail_(value, required) {
+  var s = String(value == null ? '' : value).trim();
+  if (!s) { if (required) throw new Error('缺 Email'); return ''; }
+  if (s.length > 254) throw new Error('Email 過長');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) throw new Error('Email 格式不正確');
+  return s;
+}
+
+// 千分位（伺服器端 toLocaleString 分組不穩，統一自己加）
+function fmtMoney_(n) {
+  return String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
 // 名額、查重與寫入必須在同一把 ScriptLock 內，否則併發送出仍可能超賣。
 function acquireCapacityLock_() {
   var lock = LockService.getScriptLock();

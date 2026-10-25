@@ -85,8 +85,25 @@ function notionApi_(method, path, body) {
     if (code >= 200 && code < 300) return { ok: true, data: data };
     return { ok: false, error: 'Notion API ' + code + '：' + (data.message || text.slice(0, 300) || '未知錯誤') };
   } catch (err) {
-    return { ok: false, error: String(err) };
+    var message = String(err || '');
+    if (message.indexOf('script.external_request') >= 0 || message.indexOf('UrlFetchApp.fetch') >= 0) {
+      return { ok: false, error: '尚未完成 Google Apps Script 外部連線授權。請專案擁有者開啟 Apps Script 編輯器，選擇 authorizeApp 函式並按「執行」→「允許」，完成後重新整理本頁。' };
+    }
+    return { ok: false, error: message };
   }
+}
+
+// 新專案第一次部署後，必須由部署擁有者在 Apps Script 編輯器手動執行一次。
+// 這支只做唯讀連線檢查，不會新增、修改或刪除 Notion 資料。
+function authorizeApp() {
+  // 細分授權畫面若曾漏勾權限，直接呼叫 UrlFetchApp 只會報錯、不會重開授權視窗。
+  // 從 Apps Script 編輯器執行時，這行會強制要求本專案尚未授予的全部權限。
+  ScriptApp.requireAllScopes(ScriptApp.AuthMode.FULL);
+  var result = notionApi_('get', '/users/me');
+  if (!result.ok) throw new Error(result.error);
+  var mailQuota = null;
+  if (typeof MailApp !== 'undefined') mailQuota = MailApp.getRemainingDailyQuota();
+  return '授權完成；Notion 連線正常' + (mailQuota == null ? '' : '；目前可寄信額度 ' + mailQuota);
 }
 
 // 查全部（自動翻頁）→ { ok, pages:[原始 Notion page 物件] }
@@ -110,6 +127,8 @@ function notionQueryAll_() {
 // 固定文字欄／數字欄／submit 用的 select 欄（依 CONFIG 動態組）
 function fixedTxtFields_() {
   var t = ['地址', '匯款日期', '帳號後五碼', '備註', '報名編號'];
+  // Email 僅在啟用通知信時參與讀寫；未啟用時完全不碰，確保產出行為與舊版一致。
+  if (CONFIG.NOTIFY && CONFIG.NOTIFY.ENABLED) t.push('Email');
   if (CONFIG.REGISTRATION_MODE === 'family') t = t.concat(['聯絡人', '家庭編號']);
   return t;
 }
@@ -161,6 +180,13 @@ function loadAllRows_() {
 
 function genRand_() { return Math.random().toString(36).slice(2, 8).toUpperCase(); }
 
+// 畫面用語可依活動情境自訂；Notion schema／payload 鍵仍固定使用既有中文欄位名。
+function displayLabel_(key, fallback) {
+  var labels = CONFIG.LABELS || {};
+  var value = String(labels[key] || '').trim();
+  return value || fallback;
+}
+
 // ── 後台登入 ────────────────────────────────────────────────
 // 後台密碼只留在 GAS 伺服器端，絕不注入 report.html。
 function reportLoginApi(password) {
@@ -187,27 +213,38 @@ function submitApi(payload) {
     var groupField = CONFIG.GROUP_FIELD || '';
     var groupOptions = CONFIG.GROUP_OPTIONS || [];
 
-    var contact = cleanText_(MODE === 'family' ? payload['聯絡人'] : payload['功德主'], MODE === 'family' ? '聯絡人' : '功德主', APP_LIMITS.NAME, true);
+    var personLabel = displayLabel_('PERSON', '報名人');
+    var contactLabel = displayLabel_('CONTACT', '聯絡人');
+    var itemsLabel = displayLabel_('ITEMS', '報名項目');
+    var paymentLabel = displayLabel_('PAYMENT', '付款方式');
+    var noteLabel = displayLabel_('NOTE', '備註');
+    var contact = cleanText_(MODE === 'family' ? payload['聯絡人'] : payload['功德主'], (MODE === 'family' ? contactLabel : personLabel) + '姓名', APP_LIMITS.NAME, true);
     var phone = cleanPhone_(payload['電話']);
     var pay = String(payload['繳款方式'] || '').trim();
-    if (payOptions.indexOf(pay) < 0) return { ok: false, error: '繳款方式不正確' };
+    if (payOptions.indexOf(pay) < 0) return { ok: false, error: paymentLabel + '不正確' };
     if (!chkTrue(payload['個資同意'])) return { ok: false, error: '缺個資同意' };
     if (groupField && payload[groupField] && groupOptions.indexOf(String(payload[groupField])) < 0) return { ok: false, error: '所屬單位不正確' };
     payload['電話'] = phone;
     payload['地址'] = cleanText_(payload['地址'], '地址', APP_LIMITS.ADDRESS, false);
-    payload['備註'] = cleanText_(payload['備註'], '備註', APP_LIMITS.NOTE, false);
+    payload['備註'] = cleanText_(payload['備註'], noteLabel, APP_LIMITS.NOTE, false);
+    // Email 選填、且格式錯誤不得擋報名（通知信是加值功能，不能影響落地）
+    if (CONFIG.NOTIFY && CONFIG.NOTIFY.ENABLED) {
+      try { payload['Email'] = cleanEmail_(payload['Email'], false); } catch (ignoreEmail) { payload['Email'] = ''; }
+    } else {
+      payload['Email'] = '';
+    }
     if (MODE === 'family') payload['聯絡人'] = contact;
     else payload['功德主'] = contact;
 
     var people = MODE === 'family' ? payload['功德主清單'] : [payload];
-    if (!Array.isArray(people) || people.length < 1) return { ok: false, error: '至少要有一位功德主' };
-    if (people.length > 50) return { ok: false, error: '單次最多 50 位功德主' };
+    if (!Array.isArray(people) || people.length < 1) return { ok: false, error: '至少要有一位' + personLabel };
+    if (people.length > 50) return { ok: false, error: '單次最多 50 位' + personLabel };
 
     var normalized = [];
     var grandTotal = 0;
     for (var i = 0; i < people.length; i++) {
       var person = people[i] || {};
-      var name = cleanText_(person['功德主'], '第 ' + (i + 1) + ' 位功德主姓名', APP_LIMITS.NAME, true);
+      var name = cleanText_(person['功德主'], '第 ' + (i + 1) + ' 位' + personLabel + '姓名', APP_LIMITS.NAME, true);
       person['功德主'] = name;
       var subtotal = 0, selected = false;
       for (var j = 0; j < items.length; j++) {
@@ -225,7 +262,7 @@ function submitApi(payload) {
         person[it.id] = v;
         assertSafeTotal_(subtotal);
       }
-      if (!selected) return { ok: false, error: name + ' 至少要選擇一個品項' };
+      if (!selected) return { ok: false, error: name + ' 至少要選擇一個' + itemsLabel };
       grandTotal += subtotal;
       assertSafeTotal_(grandTotal);
       normalized.push({ person: person, name: name, subtotal: subtotal });
@@ -300,6 +337,10 @@ function submitApi(payload) {
       var created = notionApi_('post', '/pages', { parent: { database_id: notionDbId_() }, properties: props });
       if (!created.ok) return { ok: false, error: '寫入失敗：' + created.error };
     }
+    // 通知信獨立 try/catch、非阻擋：寄信失敗一律不影響「報名已落地」的成功結果。
+    try {
+      notifyOnSubmit_(registrationId, contact, phone, pay, MODE, String(payload['Email'] || ''), normalized);
+    } catch (ignoreNotify) {}
     return { ok: true, count: normalized.length, registrationId: registrationId };
   } catch (err) {
     return { ok: false, error: String(err && err.message ? err.message : err) };
@@ -397,13 +438,15 @@ function publicUpdateApi(registrationId, phone, payload) {
     if (rows.some(function (r) { return !isActiveRow_(r); })) return { ok: false, error: '此筆報名已取消，無法修改' };
     var ids = rows.map(function (r) { return r.pageId; });
     var people = Array.isArray(payload.people) ? payload.people : [];
-    if (people.length !== rows.length) return { ok: false, error: '功德主筆數不一致，請重新查詢' };
+    var personLabel = displayLabel_('PERSON', '報名人');
+    var itemsLabel = displayLabel_('ITEMS', '報名項目');
+    if (people.length !== rows.length) return { ok: false, error: personLabel + '筆數不一致，請重新查詢' };
     var submittedIds = [];
     for (var p = 0; p < people.length; p++) {
       var submittedId = String(people[p].pageId || '');
-      if (ids.indexOf(submittedId) < 0 || submittedIds.indexOf(submittedId) >= 0) return { ok: false, error: '功德主資料不一致，請重新查詢' };
+      if (ids.indexOf(submittedId) < 0 || submittedIds.indexOf(submittedId) >= 0) return { ok: false, error: personLabel + '資料不一致，請重新查詢' };
       submittedIds.push(submittedId);
-      people[p]['功德主'] = cleanText_(people[p]['功德主'], '功德主', APP_LIMITS.NAME, true);
+      people[p]['功德主'] = cleanText_(people[p]['功德主'], personLabel, APP_LIMITS.NAME, true);
       var selected = false, subtotal = 0;
       for (var q = 0; q < (CONFIG.QTY_ITEMS || []).length; q++) {
         var item = CONFIG.QTY_ITEMS[q], value;
@@ -416,9 +459,9 @@ function publicUpdateApi(registrationId, phone, payload) {
           ((item.pricingMode === 'donation' || item.pricingMode === 'minimum') ? value : 0);
         assertSafeTotal_(subtotal);
       }
-      if (!selected) return { ok: false, error: String(people[p]['功德主']) + ' 至少要選擇一個品項' };
+      if (!selected) return { ok: false, error: String(people[p]['功德主']) + ' 至少要選擇一個' + itemsLabel };
     }
-    if (ids.some(function (id) { return submittedIds.indexOf(id) < 0; })) return { ok: false, error: '功德主資料不一致，請重新查詢' };
+    if (ids.some(function (id) { return submittedIds.indexOf(id) < 0; })) return { ok: false, error: personLabel + '資料不一致，請重新查詢' };
     var allLoaded = loadAllRows_();
     if (!allLoaded.ok) return allLoaded;
     var others = (allLoaded.data || []).filter(function (r) { return isActiveRow_(r) && ids.indexOf(r.pageId) < 0; });
@@ -436,6 +479,7 @@ function publicUpdateApi(registrationId, phone, payload) {
       if (capUsed + capIncoming > capLimit) return { ok: false, error: capIt.id + ' 剩餘數量不足' };
     }
     var sharedAllowed = ['地址', '繳款方式', '匯款日期', '帳號後五碼', '匯款金額', '備註'];
+    if (CONFIG.NOTIFY && CONFIG.NOTIFY.ENABLED) sharedAllowed.push('Email');
     if (CONFIG.REGISTRATION_MODE === 'family') sharedAllowed.push('聯絡人');
     if (CONFIG.GROUP_FIELD) sharedAllowed.push(CONFIG.GROUP_FIELD);
     (CONFIG.CUSTOM_FIELDS || []).forEach(function (f) { sharedAllowed.push(f.name); });
@@ -504,6 +548,7 @@ function reportUpdateApi(password, pageId, fields, pageIds) {
   fields = fields || {};
   var allowed = ['功德主', '電話', '地址', '繳款方式', '匯款日期', '帳號後五碼', '匯款金額', '備註',
     '繳費狀況', '確認匯款?', '稽核', '個資同意'];
+  if (CONFIG.NOTIFY && CONFIG.NOTIFY.ENABLED) allowed.push('Email');
   if (CONFIG.REGISTRATION_MODE === 'family') allowed.push('聯絡人');
   (CONFIG.CUSTOM_FIELDS || []).forEach(function (f) { allowed.push(f.name); });
   if (CONFIG.GROUP_FIELD) allowed.push(CONFIG.GROUP_FIELD);
@@ -523,17 +568,18 @@ function reportUpdateApi(password, pageId, fields, pageIds) {
   }
   Object.keys(fields).forEach(function (k) { if (allowed.indexOf(k) >= 0) clean[k] = fields[k]; });
   try {
-    if (clean['功德主'] !== undefined) clean['功德主'] = cleanText_(clean['功德主'], '功德主', APP_LIMITS.NAME, true);
-    if (clean['聯絡人'] !== undefined) clean['聯絡人'] = cleanText_(clean['聯絡人'], '聯絡人', APP_LIMITS.NAME, true);
+    if (clean['功德主'] !== undefined) clean['功德主'] = cleanText_(clean['功德主'], displayLabel_('PERSON', '報名人'), APP_LIMITS.NAME, true);
+    if (clean['聯絡人'] !== undefined) clean['聯絡人'] = cleanText_(clean['聯絡人'], displayLabel_('CONTACT', '聯絡人'), APP_LIMITS.NAME, true);
     if (clean['電話'] !== undefined) clean['電話'] = cleanPhone_(clean['電話']);
     if (clean['地址'] !== undefined) clean['地址'] = cleanText_(clean['地址'], '地址', APP_LIMITS.ADDRESS, false);
-    if (clean['備註'] !== undefined) clean['備註'] = cleanText_(clean['備註'], '備註', APP_LIMITS.NOTE, false);
+    if (clean['備註'] !== undefined) clean['備註'] = cleanText_(clean['備註'], displayLabel_('NOTE', '備註'), APP_LIMITS.NOTE, false);
+    if (clean['Email'] !== undefined) clean['Email'] = cleanEmail_(clean['Email'], false);
     if (clean['繳費狀況'] !== undefined && CONFIG.PAY_STATUS.indexOf(clean['繳費狀況']) < 0) return { ok: false, error: '繳費狀況不正確' };
-    if (clean['繳款方式'] !== undefined && clean['繳款方式'] && CONFIG.PAY_OPTIONS.indexOf(clean['繳款方式']) < 0) return { ok: false, error: '繳款方式不正確' };
+    if (clean['繳款方式'] !== undefined && clean['繳款方式'] && CONFIG.PAY_OPTIONS.indexOf(clean['繳款方式']) < 0) return { ok: false, error: displayLabel_('PAYMENT', '付款方式') + '不正確' };
     // 匯款三欄必須連同繳款方式一起更新，避免缺少目前狀態時做出不完整的局部 PATCH。
     var touchesTransferFields = clean['匯款日期'] !== undefined || clean['帳號後五碼'] !== undefined || clean['匯款金額'] !== undefined;
     if (touchesTransferFields && (!clean['繳款方式'] || CONFIG.PAY_OPTIONS.indexOf(clean['繳款方式']) < 0)) {
-      return { ok: false, error: '更新匯款資料時需一併提供有效的繳款方式' };
+      return { ok: false, error: '更新匯款資料時需一併提供有效的' + displayLabel_('PAYMENT', '付款方式') };
     }
     // 只有明確改為非匯款時可清空匯款三欄；其餘局部 PATCH 不得把既有匯款資料改成不完整。
     var switchingAwayFromTransfer = clean['繳款方式'] !== undefined && clean['繳款方式'] && clean['繳款方式'] !== '匯款';
@@ -620,4 +666,156 @@ function buildPatchProperties_(clean) {
     else P[f.name] = pTxt_(v);
   });
   return P;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  報名確認信（加值功能；CONFIG.NOTIFY.ENABLED 為 false 時整段不啟用）
+//  以 MailApp 由部署擁有者身分寄出；任何寄信失敗一律吞掉、不影響報名落地。
+// ═══════════════════════════════════════════════════════════
+
+// 報名成功後自動寄送：管理者一律寄、報名人在 SEND_USER 且有 Email 時才寄。
+function notifyOnSubmit_(registrationId, contact, phone, pay, mode, email, normalized) {
+  if (!CONFIG.NOTIFY || !CONFIG.NOTIFY.ENABLED) return;
+  var rows = (normalized || []).map(function (e) { return e.person; });
+  var mail = buildConfirmationMail_({ registrationId: registrationId, contact: contact, phone: phone, pay: pay, mode: mode, rows: rows });
+  var admin = String(CONFIG.NOTIFY.ADMIN_EMAIL || '').trim();
+  if (admin) sendMailSafe_(admin, mail.adminSubject, mail.adminBody);
+  if (CONFIG.NOTIFY.SEND_USER && email) sendMailSafe_(email, mail.subject, mail.body);
+}
+
+// 組出報名人版與管理者版信件內容（純文字，避免 HTML 注入疑慮）
+function buildConfirmationMail_(info) {
+  var rows = info.rows || [];
+  var items = CONFIG.QTY_ITEMS || [];
+  var personLabel = displayLabel_('PERSON', '報名人');
+  var contactLabel = info.mode === 'family' ? displayLabel_('CONTACT', '聯絡人') : personLabel;
+  var itemsLabel = displayLabel_('ITEMS', '報名項目');
+  var paymentLabel = displayLabel_('PAYMENT', '付款方式');
+  var totalLabel = displayLabel_('TOTAL', '總金額');
+  var total = 0;
+  var lines = [];
+  rows.forEach(function (r) {
+    items.forEach(function (it) {
+      var v = Number(r[it.id]) || 0;
+      if (v <= 0) return;
+      var pm = it.pricingMode || 'fixed';
+      var amt = (pm === 'fixed') ? v * (Number(it.price) || 0) : ((pm === 'donation' || pm === 'minimum') ? v : 0);
+      total += amt;
+      var who = (info.mode === 'family') ? (String(r['功德主'] || '') + '｜') : '';
+      var detail;
+      if (pm === 'fixed') detail = v + ' ' + (it.unit || '份') + '（NT$ ' + fmtMoney_(amt) + '）';
+      else if (pm === 'free') detail = v + ' ' + (it.unit || '份') + '（免費）';
+      else detail = 'NT$ ' + fmtMoney_(v);
+      lines.push('・' + who + it.id + '：' + detail);
+    });
+  });
+  var eventName = CONFIG.EVENT_NAME || '活動';
+  var org = CONFIG.ORG_NAME || '';
+  var itemBlock = lines.length ? lines.join('\n') : '（無品項明細）';
+
+  var userLines = [];
+  if (org) userLines.push(org);
+  userLines.push(eventName + ' 報名確認');
+  userLines.push('');
+  userLines.push('親愛的 ' + (info.contact || '') + ' 您好：');
+  userLines.push('感謝您的報名，以下為您的報名資料：');
+  userLines.push('');
+  userLines.push('報名編號：' + (info.registrationId || ''));
+  userLines.push('聯絡電話：' + (info.phone || ''));
+  userLines.push(paymentLabel + '：' + (info.pay || ''));
+  userLines.push('');
+  userLines.push('【' + itemsLabel + '】');
+  userLines.push(itemBlock);
+  userLines.push('');
+  userLines.push(totalLabel + '：NT$ ' + fmtMoney_(total));
+  userLines.push('');
+  userLines.push('如需查詢或修改報名，請至報名查詢頁，以報名編號與聯絡電話登入。');
+  userLines.push('');
+  userLines.push('此信由系統自動發送，請勿直接回覆。');
+
+  var adminLines = [];
+  adminLines.push('【新報名通知】' + eventName);
+  adminLines.push('');
+  adminLines.push(contactLabel + '：' + (info.contact || ''));
+  adminLines.push('報名編號：' + (info.registrationId || ''));
+  adminLines.push('聯絡電話：' + (info.phone || ''));
+  adminLines.push(paymentLabel + '：' + (info.pay || ''));
+  if (info.mode === 'family') adminLines.push(personLabel + '人數：' + rows.length);
+  adminLines.push('');
+  adminLines.push('【' + itemsLabel + '】');
+  adminLines.push(itemBlock);
+  adminLines.push('');
+  adminLines.push(totalLabel + '：NT$ ' + fmtMoney_(total));
+
+  return {
+    subject: '【報名確認】' + eventName + '　' + (info.registrationId || ''),
+    adminSubject: '【新報名】' + eventName + '　' + (info.contact || ''),
+    body: userLines.join('\n'),
+    adminBody: adminLines.join('\n')
+  };
+}
+
+function sendMailSafe_(to, subject, body) {
+  try {
+    to = String(to || '').trim();
+    if (!to) return false;
+    MailApp.sendEmail(to, subject, body);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+// 後台重寄：target = 'user' | 'admin' | 'both'
+function reportResendMailApi(password, registrationId, target) {
+  if (String(password || '') !== CONFIG.REPORT_PASSWORD) return { ok: false, error: '未授權' };
+  if (!CONFIG.NOTIFY || !CONFIG.NOTIFY.ENABLED) return { ok: false, error: '此活動未啟用報名通知信' };
+  registrationId = String(registrationId || '').trim();
+  if (!/^R-[A-Z0-9-]+$/i.test(registrationId)) return { ok: false, error: '報名編號格式不正確' };
+  var loaded = loadAllRows_();
+  if (!loaded.ok) return loaded;
+  var rows = (loaded.data || []).filter(function (r) { return String(r['報名編號'] || '') === registrationId && isActiveRow_(r); });
+  if (!rows.length) return { ok: false, error: '查無有效報名資料' };
+  var first = rows[0];
+  var mode = CONFIG.REGISTRATION_MODE === 'family' ? 'family' : 'single';
+  var contact = mode === 'family' ? (first['聯絡人'] || first['功德主']) : first['功德主'];
+  var mail = buildConfirmationMail_({ registrationId: registrationId, contact: contact, phone: first['電話'], pay: first['繳款方式'], mode: mode, rows: rows });
+  var email = String(first['Email'] || '').trim();
+  target = String(target || 'user');
+  var sentUser = false, sentAdmin = false;
+  if (target === 'user' || target === 'both') {
+    if (!email) return { ok: false, error: '此筆報名沒有 Email，無法寄給報名人' };
+    sentUser = sendMailSafe_(email, mail.subject, mail.body);
+  }
+  if (target === 'admin' || target === 'both') {
+    var admin = String(CONFIG.NOTIFY.ADMIN_EMAIL || '').trim();
+    if (!admin) return { ok: false, error: '尚未設定管理者 Email' };
+    sentAdmin = sendMailSafe_(admin, mail.adminSubject, mail.adminBody);
+  }
+  if (!sentUser && !sentAdmin) return { ok: false, error: '寄送失敗，請稍後再試（可能已達每日寄信上限）' };
+  return { ok: true, sentUser: sentUser, sentAdmin: sentAdmin, email: email };
+}
+
+// 報名人自助重寄到自己填的 Email；若與存檔不同且有效，順手存回 Notion 方便日後後台重寄。
+function publicResendMailApi(registrationId, phone, email) {
+  if (!CONFIG.NOTIFY || !CONFIG.NOTIFY.ENABLED) return { ok: false, error: '此活動未啟用報名通知信' };
+  var found = publicLookupApi(registrationId, phone);
+  if (!found.ok) return found;
+  var rows = (found.data || []).filter(isActiveRow_);
+  if (!rows.length) return { ok: false, error: '此筆報名已取消或查無資料' };
+  var clean;
+  try { clean = cleanEmail_(email, true); } catch (e) { return { ok: false, error: String(e && e.message ? e.message : e) }; }
+  var first = rows[0];
+  var mode = CONFIG.REGISTRATION_MODE === 'family' ? 'family' : 'single';
+  var contact = mode === 'family' ? (first['聯絡人'] || first['功德主']) : first['功德主'];
+  var mail = buildConfirmationMail_({ registrationId: String(registrationId || '').trim(), contact: contact, phone: first['電話'], pay: first['繳款方式'], mode: mode, rows: rows });
+  if (!sendMailSafe_(clean, mail.subject, mail.body)) return { ok: false, error: '寄送失敗，請稍後再試' };
+  var stored = String(first['Email'] || '').trim();
+  if (clean && clean !== stored) {
+    try {
+      var ids = rows.map(function (r) { return r.pageId; });
+      reportUpdateApi(CONFIG.REPORT_PASSWORD, ids[0], { 'Email': clean }, ids);
+    } catch (ignoreSave) {}
+  }
+  return { ok: true, email: clean };
 }

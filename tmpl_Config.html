@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════
 //  {{EVENT_NAME}} — Config.gs
 //  常數唯一來源。前端一律用 getClientConfig(page) 注入，勿在 HTML 硬寫。
-//  由「宮廟共用報名表產生器」產出（多種計價；支援單人／家庭模式）。
+//  由「通用活動報名表產生器」產出（多種計價；支援單人／家庭模式）。
 //  🔴 Notion token 與 DB ID 不在此檔，一律放 Secrets.gs（純後端、不注入前端）。
 // ═══════════════════════════════════════════════════════════
 
@@ -29,17 +29,22 @@ var CONFIG = {
   REGISTRATION_MODE: {{REGISTRATION_MODE_JS}},
   CUSTOM_FIELDS: {{CUSTOM_FIELDS_JS}},
   CAPACITY: {{CAPACITY_JS}},
+  UI: {{UI_JS}},
+  LABELS: {{LABELS_JS}},
 
   // 品項唯一來源（固定／隨喜／免費／最低額）；欄位名＝Notion 欄位名
   QTY_ITEMS: {{QTY_ITEMS_JS}},
 
-  // 所屬宮廟／分會／單位，可由產生器自訂欄位名稱與選項
+  // 所屬單位／分會／團體，可由產生器自訂欄位名稱與選項
   GROUP_FIELD: {{GROUP_FIELD_JS}},
   GROUP_OPTIONS: {{GROUP_OPTIONS_JS}},
 
   PAY_OPTIONS: {{PAY_OPTIONS_JS}},
   PAY_STATUS: {{PAY_STATUS_JS}},
-  REG_STATUS: {{REG_STATUS_JS}}
+  REG_STATUS: {{REG_STATUS_JS}},
+
+  // 報名確認信設定（純後端，ADMIN_EMAIL 絕不注入前端；前端只拿 NOTIFY_ON 布林）
+  NOTIFY: {{NOTIFY_JS}}
 };
 
 // 依頁面切分：所有前端頁面都不得帶密碼、Notion token 或 DB ID
@@ -56,7 +61,10 @@ function getClientConfig(page) {
       GROUP_OPTIONS: CONFIG.GROUP_OPTIONS,
       PAY_OPTIONS: CONFIG.PAY_OPTIONS,
       PAY_STATUS: CONFIG.PAY_STATUS,
-      REG_STATUS: CONFIG.REG_STATUS
+      REG_STATUS: CONFIG.REG_STATUS,
+      UI: CONFIG.UI,
+      LABELS: CONFIG.LABELS,
+      NOTIFY_ON: (CONFIG.NOTIFY ? !!CONFIG.NOTIFY.ENABLED : false)
     };
   }
   return {
@@ -82,6 +90,9 @@ function getClientConfig(page) {
     GROUP_FIELD: CONFIG.GROUP_FIELD,
     GROUP_OPTIONS: CONFIG.GROUP_OPTIONS,
     PAY_OPTIONS: CONFIG.PAY_OPTIONS,
-    REG_STATUS: CONFIG.REG_STATUS
+    REG_STATUS: CONFIG.REG_STATUS,
+    UI: CONFIG.UI,
+    LABELS: CONFIG.LABELS,
+    NOTIFY_ON: (CONFIG.NOTIFY ? !!CONFIG.NOTIFY.ENABLED : false)
   };
 }

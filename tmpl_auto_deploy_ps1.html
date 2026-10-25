@@ -2,7 +2,9 @@
 
 param(
   [switch]$Login,
-  [string]$Title
+  [switch]$SkipOpenAuthorization,
+  [string]$Title,
+  [string]$AccountEmail = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -89,7 +91,22 @@ if ($Login) {
 }
 
 Write-Host '> 目前 clasp 登入狀態：' -ForegroundColor Cyan
-$accountEmail = Get-ClaspAccountEmail
+$detectedAccountEmail = Get-ClaspAccountEmail -SkipProfileProbe:([bool]$AccountEmail)
+if ($AccountEmail) {
+  $AccountEmail = $AccountEmail.Trim().ToLowerInvariant()
+  if (-not (Test-GoogleAccountEmail $AccountEmail)) {
+    Fail "選單傳入的 Google Email 格式不正確：$AccountEmail"
+  }
+  if ($detectedAccountEmail -and $detectedAccountEmail -ne $AccountEmail) {
+    Fail "目前 clasp 帳號為 $detectedAccountEmail，與選單指定的 $AccountEmail 不同；已停止，未 push。"
+  }
+  if (-not $detectedAccountEmail -and -not (Test-ClaspAuthorized -UseCachedResult)) {
+    Fail '目前沒有可用的 Google 登入憑證，或憑證已要求重新驗證。'
+  }
+  $accountEmail = $AccountEmail
+} else {
+  $accountEmail = $detectedAccountEmail
+}
 if (-not $accountEmail) {
   Fail '目前沒有可用的 Google 登入憑證。請重新執行自動部署選單，選 1 後依提示登入。'
 }
@@ -137,6 +154,7 @@ $deployId = $null
 if (Test-Path -LiteralPath $deployIdFile) {
   $deployId = (Get-Content -LiteralPath $deployIdFile -Raw).Trim()
 }
+$isFirstDeployment = -not [bool]$deployId
 
 $deploymentOutput = (clasp list-deployments 2>&1 | Out-String).Trim()
 $deploymentExit = $LASTEXITCODE
@@ -175,6 +193,8 @@ if ($deployId) {
 $url = "https://script.google.com/macros/s/$deployId/exec"
 $reportUrl = "$url?page=report"
 $lookupUrl = "$url?page=lookup"
+$scriptId = (Get-Content -LiteralPath $claspJson -Raw | ConvertFrom-Json).scriptId
+$editorUrl = "https://script.google.com/d/$scriptId/edit"
 $urlFile = Join-Path $PSScriptRoot '報名表網址.txt'
 $reportUrlFile = Join-Path $PSScriptRoot '後台網址.txt'
 $lookupUrlFile = Join-Path $PSScriptRoot '報名查詢網址.txt'
@@ -182,7 +202,13 @@ $urlListFile = Join-Path $PSScriptRoot '網址清單.txt'
 Set-Content -LiteralPath $urlFile -Value $url -Encoding utf8
 Set-Content -LiteralPath $reportUrlFile -Value $reportUrl -Encoding utf8
 Set-Content -LiteralPath $lookupUrlFile -Value $lookupUrl -Encoding utf8
-Set-Content -LiteralPath $urlListFile -Value @("報名表網址：$url", "報名查詢網址：$lookupUrl", "後台網址：$reportUrl") -Encoding utf8
+Set-Content -LiteralPath $urlListFile -Value @(
+  "報名表網址：$url",
+  "報名查詢網址：$lookupUrl",
+  "後台網址：$reportUrl",
+  "Apps Script 編輯器：$editorUrl",
+  '首次部署必要授權：雙擊「自動部署.bat」選 6，即會自動開啟正確專案；再選 authorizeApp → 執行 → 允許。'
+) -Encoding utf8
 try { Set-Clipboard -Value $url } catch { }
 Save-DeploymentAccountProfile $accountEmail
 
@@ -197,4 +223,19 @@ Write-Host "   $lookupUrl" -ForegroundColor Green
 Write-Host '==================================================' -ForegroundColor Green
 Write-Host '網址已儲存到：報名表網址.txt、報名查詢網址.txt、後台網址.txt、網址清單.txt' -ForegroundColor Cyan
 Write-Host '已嘗試把報名表網址複製到剪貼簿；請把兩個網址加入書籤或妥善保存。' -ForegroundColor Yellow
-Write-Host '第一次開啟或操作時，Google 可能要求專案擁有者授權。' -ForegroundColor DarkGray
+Write-Host ''
+Write-Host '⚠ 首次部署必要授權（未做會導致後台讀取失敗）：' -ForegroundColor Yellow
+Write-Host "   1. 開啟 $editorUrl" -ForegroundColor Yellow
+Write-Host '   2. 上方函式選 authorizeApp，按「執行」' -ForegroundColor Yellow
+Write-Host '   3. 依 Google 畫面按「允許」，看到「執行完畢」後再開報名表' -ForegroundColor Yellow
+Write-Host '   authorizeApp 只做 Notion 唯讀連線檢查，不會修改資料。' -ForegroundColor DarkGray
+if ($isFirstDeployment -and -not $SkipOpenAuthorization) {
+  Write-Host ''
+  Write-Host '正在自動開啟授權頁面；不需要輸入指令或貼程式碼。' -ForegroundColor Cyan
+  try {
+    Start-Process -FilePath $editorUrl
+    Write-Host '若稍後需要重新開啟，雙擊「自動部署.bat」後選 6 即可。' -ForegroundColor Green
+  } catch {
+    Write-Host '無法自動開啟瀏覽器；請雙擊「自動部署.bat」後選 6。' -ForegroundColor Yellow
+  }
+}

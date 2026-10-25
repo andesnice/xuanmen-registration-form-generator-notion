@@ -13,15 +13,75 @@ $script:DeploymentStateFiles = @(
   '後台網址.txt',
   '網址清單.txt'
 )
+$script:LastClaspAuthorizationKnown = $false
+$script:LastClaspAuthorized = $false
 
-function Get-ClaspAccountEmail {
-  $accountOutput = & clasp show-authorized-user 2>&1
+function Get-ClaspAccountEmail([switch]$SkipProfileProbe) {
+  $accountOutput = & clasp --json show-authorized-user 2>&1
   $accountExit = $LASTEXITCODE
   $accountText = ($accountOutput | Out-String).Trim()
-  $match = [regex]::Match($accountText, '(?i)[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}')
-  $notLoggedIn = $accountText -match '(?i)not logged in|no credentials|unauthorized'
-  if ($accountExit -ne 0 -or $notLoggedIn -or -not $match.Success) { return $null }
-  return $match.Value.ToLowerInvariant()
+  $script:LastClaspAuthorizationKnown = $true
+  $script:LastClaspAuthorized = $false
+  if ($accountExit -ne 0) { return $null }
+
+  try {
+    $auth = $accountText | ConvertFrom-Json
+    $script:LastClaspAuthorized = [bool]$auth.loggedIn
+    if (-not $auth.loggedIn) { return $null }
+    if ($auth.email -and (Test-GoogleAccountEmail $auth.email)) {
+      return $auth.email.ToLowerInvariant()
+    }
+  }
+  catch {
+    # 相容 clasp 2.x 與測試替身的純文字輸出。
+    $match = [regex]::Match($accountText, '(?i)[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}')
+    $notLoggedIn = $accountText -match '(?i)not logged in|no credentials|unauthorized'
+    if ($notLoggedIn) { return $null }
+    $script:LastClaspAuthorized = $true
+    if (-not $match.Success) { return $null }
+    return $match.Value.ToLowerInvariant()
+  }
+
+  if ($SkipProfileProbe) { return $null }
+
+  # clasp 3.x 可能只有 loggedIn:true，卻因 Workspace 重新驗證而拿不到 email。
+  # 逐一用已保存的唯讀專案設定探測，避免把 A 帳號的部署 ID 套到 B 帳號。
+  $accessibleProfiles = @(
+    Get-DeploymentAccountProfiles | Where-Object {
+      Test-ClaspCanAccessDeploymentProfile $_
+    }
+  )
+  if ($accessibleProfiles.Count -eq 1) {
+    return $accessibleProfiles[0].ToLowerInvariant()
+  }
+  return $null
+}
+
+function Test-ClaspAuthorized([switch]$UseCachedResult) {
+  if ($UseCachedResult -and $script:LastClaspAuthorizationKnown) {
+    return $script:LastClaspAuthorized
+  }
+  $accountOutput = & clasp --json show-authorized-user 2>&1
+  if ($LASTEXITCODE -ne 0) { return $false }
+  try {
+    $auth = (($accountOutput | Out-String).Trim() | ConvertFrom-Json)
+    return [bool]$auth.loggedIn
+  }
+  catch {
+    $accountText = ($accountOutput | Out-String).Trim()
+    return ($accountText -notmatch '(?i)not logged in|no credentials|unauthorized')
+  }
+}
+
+function Test-GoogleAccountEmail([string]$Email) {
+  return [bool]($Email -match '(?i)^[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}$')
+}
+
+function Test-ClaspCanAccessDeploymentProfile([string]$Email) {
+  $profileProject = Join-Path (Get-DeploymentProfileDir $Email) '.clasp.json'
+  if (-not (Test-Path -LiteralPath $profileProject)) { return $false }
+  & clasp --project $profileProject list-deployments 2>&1 | Out-Null
+  return ($LASTEXITCODE -eq 0)
 }
 
 function Get-DeploymentProfileDir([string]$Email) {

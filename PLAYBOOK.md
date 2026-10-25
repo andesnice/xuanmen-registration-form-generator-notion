@@ -1,9 +1,10 @@
-# 宮廟共用報名表產生器 — 生成 SOP
+# 通用活動報名表產生器 — 生成 SOP
 
-> **用途**：各宮廟填入主辦單位、活動名稱、品項、n8n、Notion 與匯款資料後，產出獨立 GAS 報名專案（index＋report＋close）與三支 n8n workflow。
+> **用途**：各類主辦單位填入活動名稱、品項、Notion 與匯款資料後，產出獨立 GAS 報名專案（index＋report＋lookup＋close）。
 > **目前範圍**：品項支援固定單價、隨喜金額、免費品項、最低金額與條件連動欄位，可選「一人一份」或「家庭代報」。另有報名編號、重複報名偵測、信眾自助查詢／修改，以及後台單筆／家庭合併收據列印。
 > 產生器另支援 Google 使用者層級的常用設定範本；一般範本只保存可重用設定，不保存活動密碼、Notion token、n8n 網址、活動名稱／代碼與日期。Notion Token、建立模式與活動總資料庫 ID 可另存為伺服器端「Notion 連線設定」，Token 不回傳前端。
-> **基準**：以本資料夾的 `tmpl_*` 為唯一產出模板，不依賴任何特定宮廟專案或本機路徑。
+> 產生器本體另可將「建立資料庫／產出專案」的成功與失敗寫入獨立 Notion2 DB；使用獨立的 Script Properties 憑證，絕不沿用操作人輸入的活動 Notion Token。設定方式見 `Notion2使用紀錄設定.md`。
+> **基準**：以本資料夾的 `tmpl_*` 為唯一產出模板，不依賴任何特定組織、專案或本機路徑。
 
 ---
 
@@ -11,7 +12,7 @@
 
 | 欄位 | 必要 | 說明 / 預設 |
 |------|------|------|
-| 宮廟／主辦單位名稱 | ✅ | 顯示於報名表資訊與結束頁署名 |
+| 主辦單位名稱 | ✅ | 顯示於報名表資訊與結束頁署名 |
 | `EVENT_NAME` 活動全名 | ✅ | 例：丙午年關聖帝君聖壽發心 |
 | `EVENT` 活動代碼 | ✅ | 英文小寫，組 webhook 路徑用（`<EVENT>-submit/report/update`）。使用者沒給 → 依名稱建議一個請他確認，**不要自己拍板** |
 | 品項清單 | ✅ | 每項設定名稱、計價模式、單價／最低額、單位與上限 |
@@ -25,7 +26,7 @@
 | 活動日期/地點/匯款截止 | ⬜ | 填進 `CONFIG.EVENT_DATE/EVENT_PLACE/REMIT_DEADLINE`，沒給先留佔位並在待辦標注 |
 | 是否祝壽/餐會類 | ⬜ | 若是（聖壽/祝壽/神明聖誕）→ 依主規範加「參與者＋是否參加餐會＋餐會人數」四欄。使用者沒明講就**問一句** |
 
-不得在產生器或產物中硬寫任何特定宮廟的名稱、帳號、n8n 網址或 Notion credential 名稱。
+不得在產生器或產物中硬寫任何特定組織的名稱、帳號或 Notion credential 名稱。
 
 ---
 
@@ -37,7 +38,7 @@
    - `EVENT` / `EVENT_NAME` / `PAGE_TITLE` / `REPORT_TITLE` / `EVENT_DATE` / `EVENT_PLACE` / `REMIT_DEADLINE` / `CLOSED_MSG` 換成本活動。
    - `REGISTRATION_MODE` 設為 `single` 或 `family`；`QTY_ITEMS` 換成使用者品項：`{ id:'盆花', unit:'份', price:300 }`（`id` = Notion Number 欄位名，中文即可，需與 Notion 欄位、n8n 映射三處一致）。
    - **移除 v1 用不到的中元專屬常數**：`FREE_GROUPS`、`DISPOSAL_OPTIONS`、`pet:true`。
-   - `PAY_OPTIONS` 從共用的 5 種方式中由使用者複選，`PAY_STATUS` 保留 4 個共用狀態；所屬欄位使用 `GROUP_FIELD/GROUP_OPTIONS`。
+   - `PAY_OPTIONS` 從共用的 4 種方式（現金／匯款／刷卡／LinePay）中由使用者複選，`PAY_STATUS` 保留 4 個共用狀態；所屬欄位使用 `GROUP_FIELD/GROUP_OPTIONS`。
    - `CLOSED: false`。`BANK` 用通用帳號。
 4. **改前端 `index.html` / `report.html` / `close.html`（資料驅動）**：
    - 讀中元的品項渲染區塊，把「硬寫 QTY_ITEMS/FREE_GROUPS」改成**從 `CFG.QTY_ITEMS` 迴圈渲染** stepper（v1 沒有隨喜群組/連動欄，一併移除中元的普施/共同桌/金紙/寵物/普桌處理 UI 與統計）。

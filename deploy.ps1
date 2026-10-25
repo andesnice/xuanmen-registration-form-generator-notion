@@ -1,6 +1,6 @@
 #requires -Version 7
 <#
-  一鍵部署：宮廟報名表產生器（Notion 版）
+  一鍵部署：通用活動報名表產生器（Notion 版）
   ──────────────────────────────────────────────
   做的事：確認登入帳號 → 載入該帳號專屬設定 → 建立(首次)或推送程式碼 → 部署 → 印出網址。
   每個 Google 帳號各自保存 Script ID、部署 ID 與網址，切換帳號不會互相覆蓋。
@@ -14,7 +14,8 @@
 #>
 param(
   [switch]$Login,
-  [string]$Title = '宮廟報名表產生器'
+  [string]$Title = '通用活動報名表產生器',
+  [string]$AccountEmail = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -87,7 +88,22 @@ if ($Login) {
 
 # 3) 顯示目前登入帳號，並切換成該帳號專屬的本機部署設定
 Write-Host "> 目前 clasp 登入狀態：" -ForegroundColor Cyan
-$accountEmail = Get-ClaspAccountEmail
+$detectedAccountEmail = Get-ClaspAccountEmail -SkipProfileProbe:([bool]$AccountEmail)
+if ($AccountEmail) {
+  $AccountEmail = $AccountEmail.Trim().ToLowerInvariant()
+  if (-not (Test-GoogleAccountEmail $AccountEmail)) {
+    Fail "選單傳入的 Google Email 格式不正確：$AccountEmail"
+  }
+  if ($detectedAccountEmail -and $detectedAccountEmail -ne $AccountEmail) {
+    Fail "目前 clasp 帳號為 $detectedAccountEmail，與選單指定的 $AccountEmail 不同；已停止，未 push。"
+  }
+  if (-not $detectedAccountEmail -and -not (Test-ClaspAuthorized -UseCachedResult)) {
+    Fail '目前沒有可用的 Google 登入憑證，或憑證已要求重新驗證。'
+  }
+  $accountEmail = $AccountEmail
+} else {
+  $accountEmail = $detectedAccountEmail
+}
 if (-not $accountEmail) {
   Fail "目前沒有可用的 Google 登入憑證。請重新執行部署選單，選 1 後依提示登入。"
 }

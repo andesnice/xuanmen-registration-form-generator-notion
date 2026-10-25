@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>意見回饋｜通用活動報名表產生器</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+:root{--red:#8B0000;--red-dark:#650000;--gold:#C8922A;--ink:#2C1A0E;--muted:#766850;--bg:#f5f0e8;--card:#fff;--line:#e5d9c0;--ok:#287a45}
+body{margin:0;min-height:100vh;font-family:'Microsoft JhengHei','Noto Sans TC',sans-serif;background:radial-gradient(circle at 8% 0,rgba(200,146,42,.14),transparent 30%),var(--bg);color:var(--ink);font-size:16px;line-height:1.65;padding:24px 14px 48px}
+.wrap{max-width:720px;margin:0 auto}
+.back{display:inline-flex;align-items:center;gap:6px;color:var(--red);font-weight:800;text-decoration:none;margin:0 0 14px;padding:7px 11px;border-radius:999px}
+.back:hover{background:#fff4df}
+.hero,.card{background:var(--card);border:1px solid var(--line);box-shadow:0 12px 32px rgba(67,42,17,.08)}
+.hero{position:relative;overflow:hidden;border-radius:20px;padding:27px 28px;margin-bottom:16px}
+.hero::after{content:'💬';position:absolute;right:24px;top:5px;font-size:76px;opacity:.09;pointer-events:none}
+.eyebrow{display:inline-block;color:var(--red);background:#f9ece8;border:1px solid #ebcbc4;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:800;letter-spacing:.08em}
+h1{color:var(--red);font-size:clamp(25px,5vw,34px);line-height:1.25;margin:9px 0 6px}
+.sub,.hint{color:var(--muted)}
+.sub{margin:0;max-width:580px}
+.card{border-radius:16px;padding:24px 26px}
+label{display:block;font-size:14px;font-weight:800;margin:13px 0 5px}
+.req{color:var(--red)}
+input,select,textarea{width:100%;font:inherit;color:var(--ink);background:#fffdf8;border:1px solid #d9ccb4;border-radius:9px;padding:11px 12px}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(200,146,42,.16);background:#fff}
+textarea{min-height:190px;resize:vertical}
+.hint{font-size:13px;margin-top:4px}
+.counter{text-align:right}
+.notice{display:flex;gap:9px;background:#fff8e9;border:1px solid #ead2a4;border-radius:10px;padding:11px 12px;margin:17px 0;font-size:13px;color:#695536}
+.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+button{font:inherit;border:0;border-radius:10px;min-height:46px;padding:12px 21px;background:linear-gradient(135deg,var(--red),var(--red-dark));color:#fff;font-weight:900;cursor:pointer;box-shadow:0 6px 14px rgba(139,0,0,.17)}
+button:disabled{opacity:.55;cursor:not-allowed}
+.status{display:none;margin-top:14px;padding:12px 14px;border-radius:10px;white-space:pre-wrap;font-size:14px}
+.status.ok{display:block;background:#eaf7ea;border:1px solid #9fd39f;color:#205f36}
+.status.err{display:block;background:#fdeaea;border:1px solid #e0a0a0;color:#981b2d}
+.status.info{display:block;background:#f0f4fb;border:1px solid #a9c0e0;color:#31547b}
+@media(max-width:560px){body{padding:14px 10px 34px}.hero{padding:23px 18px}.card{padding:20px 16px}.hero::after{right:8px;font-size:62px}.actions button{width:100%}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="<?!= APP_URL ?>" target="_top">← 返回產生器</a>
+  <header class="hero">
+    <div class="eyebrow">協助我們把工具做得更好</div>
+    <h1>意見回饋</h1>
+    <p class="sub">操作不順、遇到錯誤或想到新功能，都可以從這裡告訴我們。</p>
+  </header>
+
+  <main class="card">
+    <label for="feedbackType">回饋類型 <span class="req">*</span></label>
+    <select id="feedbackType">
+      <option value="功能建議">功能建議</option>
+      <option value="操作問題">操作問題</option>
+      <option value="錯誤回報">錯誤回報</option>
+      <option value="其他">其他</option>
+    </select>
+
+    <label for="subject">主旨（選填）</label>
+    <input id="subject" type="text" maxlength="80" placeholder="例：建立資料庫時希望有更清楚的提示">
+
+    <label for="relatedFeature">相關功能（選填）</label>
+    <input id="relatedFeature" type="text" maxlength="100" placeholder="例：活動設定、Notion 連線、下載專案">
+
+    <label for="content">意見內容 <span class="req">*</span></label>
+    <textarea id="content" maxlength="1800" aria-describedby="contentHelp" placeholder="請描述發生什麼、期待怎麼改善；若是錯誤回報，也可以附上當時做到哪一步。"></textarea>
+    <div class="hint counter" id="contentHelp"><span id="contentCount">0</span> / 1800</div>
+
+    <label for="contactEmail">聯絡 Email（選填）</label>
+    <input id="contactEmail" type="email" maxlength="200" autocomplete="email" placeholder="需要回覆時使用">
+
+    <div class="notice"><span>🔒</span><span>回饋會寫入指定的私人 Notion2 資料庫。請不要貼入 Notion Token、後台密碼或報名人的個人資料。</span></div>
+
+    <div class="actions"><button id="submitBtn" type="button" onclick="submitFeedback()">送出意見回饋</button></div>
+    <div class="status" id="feedbackStatus" role="status" aria-live="polite"></div>
+  </main>
+</div>
+
+<script>
+var submitted = false;
+function valueOf(id){return document.getElementById(id).value.trim();}
+function showStatus(kind,message){var el=document.getElementById('feedbackStatus');el.className='status '+kind;el.textContent=message;}
+function setBusy(busy){var btn=document.getElementById('submitBtn');btn.disabled=busy;btn.textContent=busy?'送出中…':(submitted?'再送一則回饋':'送出意見回饋');}
+function validateFeedback(p){
+  if(!p.content)return '請填寫意見內容';
+  if(p.content.length>1800)return '意見內容最多 1800 字';
+  if(p.contactEmail&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.contactEmail))return '聯絡 Email 格式不正確';
+  return '';
+}
+function submitFeedback(){
+  var p={type:valueOf('feedbackType'),subject:valueOf('subject'),relatedFeature:valueOf('relatedFeature'),content:valueOf('content'),contactEmail:valueOf('contactEmail')};
+  var invalid=validateFeedback(p);
+  if(invalid){showStatus('err',invalid);return;}
+  setBusy(true);showStatus('info','正在送出回饋…');
+  google.script.run.withSuccessHandler(function(result){
+    setBusy(false);
+    if(!result||!result.ok){showStatus('err','❌ '+((result&&result.error)||'送出失敗，請稍後再試'));return;}
+    submitted=true;setBusy(false);
+    document.getElementById('subject').value='';document.getElementById('relatedFeature').value='';document.getElementById('content').value='';
+    document.getElementById('contentCount').textContent='0';
+    showStatus('ok','✅ 謝謝你的回饋，已成功送出。');
+  }).withFailureHandler(function(error){setBusy(false);showStatus('err','❌ '+error.message);}).submitFeedbackApi(p);
+}
+document.getElementById('content').addEventListener('input',function(){document.getElementById('contentCount').textContent=String(this.value.length);});
+</script>
+</body>
+</html>

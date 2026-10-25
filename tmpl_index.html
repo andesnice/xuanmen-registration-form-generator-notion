@@ -4,25 +4,27 @@
 <meta charset="UTF-8">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--red:{{THEME_PRIMARY}};--gold:{{THEME_GOLD}};--ink:#2C1A0E;--bg:#f5f0e8;--card:#fff;--line:#e5d9c0}
-body{font-family:'Microsoft JhengHei','Noto Sans TC',sans-serif;background:var(--bg);color:var(--ink);font-size:16px;line-height:1.7;padding:20px 12px}
+:root{--red:{{THEME_PRIMARY}};--gold:{{THEME_GOLD}};--ink:#2C1A0E;--bg:{{THEME_BG}};--card:#fff;--line:#e5d9c0;--radius:{{CARD_RADIUS}};--font-size:{{FONT_SIZE}}}
+body{font-family:'Microsoft JhengHei','Noto Sans TC',sans-serif;background:var(--bg);color:var(--ink);font-size:var(--font-size);line-height:1.7;padding:20px 12px}
+body.shadow-none .card{box-shadow:none}body.shadow-soft .card{box-shadow:0 2px 10px rgba(0,0,0,.07)}body.shadow-strong .card{box-shadow:0 10px 24px rgba(0,0,0,.14)}
 .wrap{max-width:560px;margin:0 auto}
 .head{text-align:center;margin-bottom:16px}
+.head-copy{min-width:0}.layout-banner .head{display:grid;grid-template-columns:minmax(72px,120px) 1fr;column-gap:16px;align-items:center;text-align:left}.layout-banner .head .lamp{grid-row:1/2}.layout-banner .head-copy{text-align:left}.layout-poster .head{background:var(--red);padding:22px;border-radius:var(--radius)}.layout-poster .head h1{color:#fff}.layout-poster .head .meta{color:#fff}
 .head .lamp{font-size:40px}
 .head .lamp img{display:block;margin:6px auto;max-width:100%;max-height:260px;object-fit:contain;border-radius:8px}
-h1{color:var(--red);font-size:22px;margin:4px 0}
-.meta{font-size:14px;color:#8a7a60}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:14px;box-shadow:0 2px 10px rgba(0,0,0,.05)}
-.card h2{font-size:16px;color:var(--red);margin-bottom:10px;border-left:4px solid var(--gold);padding-left:8px}
-label{display:block;font-size:14px;font-weight:700;margin:10px 0 4px}
+h1{color:var(--red);font-size:calc(var(--font-size) + 6px);margin:4px 0}
+.meta{font-size:calc(var(--font-size) - 2px);color:#8a7a60}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-bottom:14px}
+.card h2{font-size:var(--font-size);color:var(--red);margin-bottom:10px;border-left:4px solid var(--gold);padding-left:8px}
+label{display:block;font-size:calc(var(--font-size) - 2px);font-weight:700;margin:10px 0 4px}
 .req{color:var(--red)}
-input[type=text],input[type=tel],input[type=date],select,textarea{width:100%;padding:11px;font-size:16px;border:1px solid var(--line);border-radius:8px;background:#fffdf8}
+input[type=text],input[type=tel],input[type=date],input[type=email],select,textarea{width:100%;padding:11px;font-size:var(--font-size);border:1px solid var(--line);border-radius:8px;background:#fffdf8}
 textarea{min-height:56px;resize:vertical}
-.hint{font-size:12px;color:#9a8a70;margin-top:3px}
+.hint{font-size:calc(var(--font-size) - 4px);color:#9a8a70;margin-top:3px}
 .item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px dashed var(--line)}
 .item:last-child{border-bottom:none}
 .item .nm{font-weight:700}
-.item .pr{font-size:13px;color:#8a7a60}
+.item .pr{font-size:calc(var(--font-size) - 3px);color:#8a7a60}
 .stepper{display:flex;align-items:center;gap:6px}
 .stepper button{width:34px;height:34px;border:1px solid var(--gold);background:#fff;color:var(--red);font-size:18px;border-radius:8px;cursor:pointer}
 .stepper input{width:52px;text-align:center;padding:7px}
@@ -32,17 +34,17 @@ textarea{min-height:56px;resize:vertical}
 .family-head strong{color:var(--red)}
 .mini-btn{border:1px solid var(--gold);background:#fff;color:var(--red);border-radius:7px;padding:6px 10px;cursor:pointer}
 .add-person{width:100%;border:1px dashed var(--gold);background:#fffdf8;color:var(--red);border-radius:9px;padding:10px;font-weight:700;cursor:pointer}
-.subtotal{font-size:14px;text-align:right;color:var(--red);font-weight:700;margin-top:8px}
-.total{display:flex;justify-content:space-between;font-size:18px;font-weight:800;color:var(--red);margin-top:12px;padding-top:10px;border-top:2px solid var(--gold)}
+.subtotal{font-size:calc(var(--font-size) - 2px);text-align:right;color:var(--red);font-weight:700;margin-top:8px}
+.total{display:flex;justify-content:space-between;font-size:calc(var(--font-size) + 2px);font-weight:800;color:var(--red);margin-top:12px;padding-top:10px;border-top:2px solid var(--gold)}
 .pays{display:flex;flex-wrap:wrap;gap:8px}
-.pay{flex:1;min-width:90px;text-align:center;padding:11px 6px;border:1px solid var(--line);border-radius:8px;background:#fffdf8;cursor:pointer;font-size:15px}
+.pay{flex:1;min-width:90px;text-align:center;padding:11px 6px;border:1px solid var(--line);border-radius:8px;background:#fffdf8;cursor:pointer;font-size:calc(var(--font-size) - 1px)}
 .pay.on{background:var(--red);color:#fff;border-color:var(--red)}
 .remit{display:none;margin-top:12px;padding:12px;background:#fbf6ec;border:1px dashed var(--gold);border-radius:8px}
 .remit.show{display:block}
 .bank{font-size:13px;color:#4a3826;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:10px;line-height:1.7}
 .agree{display:flex;align-items:flex-start;gap:8px;font-size:14px;font-weight:400}
 .agree input{width:20px;height:20px;margin-top:2px;flex:0 0 auto}
-.submit{width:100%;background:var(--red);color:#fff;border:none;border-radius:10px;padding:15px;font-size:18px;font-weight:800;cursor:pointer;margin-top:6px}
+.submit{width:100%;background:var(--red);color:#fff;border:none;border-radius:10px;padding:15px;font-size:calc(var(--font-size) + 2px);font-weight:800;cursor:pointer;margin-top:6px}
 .submit:disabled{opacity:.5;cursor:not-allowed}
 .msg{margin-top:12px;padding:12px;border-radius:8px;font-size:14px;white-space:pre-wrap;display:none;text-align:center}
 .msg.ok{background:#eaf7ea;border:1px solid #9fd39f;display:block}
@@ -52,12 +54,12 @@ textarea{min-height:56px;resize:vertical}
 .custom-check input{width:20px;height:20px;margin-top:3px}
 </style>
 </head>
-<body>
+<body class="layout-{{HEADER_LAYOUT}} shadow-{{CARD_SHADOW}}">
 <div class="wrap">
   <div class="head">
     <div class="lamp" id="lamp">🏮</div>
-    <h1 id="title"></h1>
-    <div class="meta" id="metaLine"></div>
+    <div class="head-copy"><h1 id="title"></h1>
+    <div class="meta" id="metaLine"></div></div>
   </div>
 
   <div class="card" id="descCard" style="display:none">
@@ -67,18 +69,23 @@ textarea{min-height:56px;resize:vertical}
   <div class="card">
     <h2>報名資料</h2>
     <div id="singleNameWrap">
-      <label>功德主（報名人）<span class="req">*</span></label>
-      <input type="text" id="f_name" placeholder="姓名">
+      <label>{{PERSON_LABEL_HTML}} <span class="req">*</span></label>
+      <input type="text" id="f_name" placeholder="{{PERSON_LABEL_HTML}}姓名">
     </div>
     <div id="familyContactWrap" style="display:none">
-      <label>聯絡人 <span class="req">*</span></label>
-      <input type="text" id="f_contact" placeholder="負責本次家庭報名的聯絡人">
-      <div class="hint">下方可分別新增多位功德主與各自品項。</div>
+      <label>{{CONTACT_LABEL_HTML}} <span class="req">*</span></label>
+      <input type="text" id="f_contact" placeholder="負責本次團體／家庭報名的{{CONTACT_LABEL_HTML}}">
+      <div class="hint">下方可分別新增多位{{PERSON_LABEL_HTML}}與各自{{ITEMS_LABEL_HTML}}。</div>
     </div>
     <label>聯絡電話 <span class="req">*</span></label>
     <input type="tel" id="f_phone" placeholder="09xxxxxxxx">
     <label>地址</label>
     <input type="text" id="f_addr" placeholder="通訊地址（寄收據用，可留空）">
+    <div id="emailWrap" style="display:none">
+      <label>Email</label>
+      <input type="email" id="f_email" placeholder="收報名確認信用，可留空">
+      <div class="hint">填了才會寄報名確認信；也可日後於查詢頁補寄。</div>
+    </div>
     <div id="groupWrap" style="display:none">
       <label id="groupLabel">所屬單位</label>
       <select id="f_group"></select>
@@ -91,18 +98,18 @@ textarea{min-height:56px;resize:vertical}
   </div>
 
   <div class="card">
-    <h2 id="itemsTitle">報名品項</h2>
+    <h2 id="itemsTitle">{{ITEMS_LABEL_HTML}}</h2>
     <div class="capacity" id="capacityBox"></div>
     <div id="singleItemsWrap"><div id="items"></div></div>
     <div id="familyItemsWrap" style="display:none">
       <div id="familyPeople"></div>
-      <button type="button" class="add-person" id="btnAddPerson">＋ 新增一位功德主</button>
+      <button type="button" class="add-person" id="btnAddPerson">＋ 新增一位{{PERSON_LABEL_HTML}}</button>
     </div>
-    <div class="total"><span>總金額</span><span id="totalTxt">NT$ 0</span></div>
+    <div class="total"><span>{{TOTAL_LABEL_HTML}}</span><span id="totalTxt">NT$ 0</span></div>
   </div>
 
   <div class="card">
-    <h2>繳款方式 <span class="req">*</span></h2>
+    <h2>{{PAYMENT_LABEL_HTML}} <span class="req">*</span></h2>
     <div class="pays" id="pays"></div>
     <div class="remit" id="remitBox">
       <div class="bank" id="bankInfo"></div>
@@ -116,15 +123,15 @@ textarea{min-height:56px;resize:vertical}
   </div>
 
   <div class="card">
-    <label>備註</label>
+    <label>{{NOTE_LABEL_HTML}}</label>
     <textarea id="f_note" placeholder="其他需求（可留空）" maxlength="2000"></textarea>
     <div style="margin-top:12px" class="agree">
       <input type="checkbox" id="f_agree">
-      <span>本人已閱讀並同意提供個人資料，供本會辦理本次活動報名、聯繫及收據寄送使用。<span class="req">（必勾）</span></span>
+      <span>本人已閱讀並同意提供個人資料，供主辦單位辦理本次活動報名、聯繫及收據寄送使用。<span class="req">（必勾）</span></span>
     </div>
   </div>
 
-  <button class="submit" id="btnSubmit">送出報名</button>
+  <button class="submit" id="btnSubmit">{{SUBMIT_LABEL_HTML}}</button>
   <div style="text-align:center;margin-top:12px"><a id="lookupLink" href="#" target="_top" style="color:var(--red)">已有報名編號？查詢／修改報名</a></div>
   <div class="msg" id="msg"></div>
 </div>
@@ -138,6 +145,8 @@ var FAMILY = []; // 家庭模式：[{ key, qty, root }]
 var NEXT_PERSON_KEY = 1;
 var PAY = '';
 var CAPACITY_STATE = { totalRemaining:null, itemRemaining:{} };
+var SUBMIT_LABEL = (CFG.UI && CFG.UI.SUBMIT_LABEL) || '送出報名';
+var L = CFG.LABELS || {PERSON:'報名人',CONTACT:'聯絡人',ITEMS:'報名項目',PAYMENT:'付款方式',NOTE:'備註',TOTAL:'總金額'};
 
 function money(n){ return 'NT$ ' + Number(n||0).toLocaleString('en-US'); }
 function $(id){ return document.getElementById(id); }
@@ -151,12 +160,13 @@ if (CFG.EVENT_DATE) mp.push('📅 ' + CFG.EVENT_DATE);
 if (CFG.EVENT_PLACE) mp.push('📍 ' + CFG.EVENT_PLACE);
 $('metaLine').textContent = mp.join('　');
 if (CFG.EVENT_DESC) { $('descLine').textContent = CFG.EVENT_DESC; $('descCard').style.display = 'block'; }
+if (CFG.NOTIFY_ON) $('emailWrap').style.display = 'block';
 if (CFG.WEB_APP_URL) $('lookupLink').href = String(CFG.WEB_APP_URL) + '?page=lookup';
 else $('lookupLink').style.display = 'none';
 // 自訂 logo：有圖就換掉 🏮（CFG.LOGO 為 base64 data URL；用 img 標籤，src 由屬性帶入不會執行內容）
 if (CFG.LOGO) { var lg = $('lamp'); if (lg) { lg.textContent = ''; var im = document.createElement('img'); im.src = CFG.LOGO; im.alt = ''; lg.appendChild(im); } }
 
-// 所屬宮廟／分會／單位
+// 所屬單位／分會／團體
 if (CFG.GROUP_FIELD && CFG.GROUP_OPTIONS && CFG.GROUP_OPTIONS.length) {
   $('groupWrap').style.display = 'block';
   $('groupLabel').textContent = CFG.GROUP_FIELD;
@@ -235,25 +245,25 @@ function buildSteppers(host, qty){
 function refreshPersonLabels(){
   FAMILY.forEach(function(person, index){
     var label = person.root.querySelector('.person-label');
-    if (label) label.textContent = '功德主 ' + (index + 1);
+    if (label) label.textContent = L.PERSON + ' ' + (index + 1);
   });
 }
 
 function addPerson(){
-  if (FAMILY.length >= 50) return fail('單次最多新增 50 位功德主');
+  if (FAMILY.length >= 50) return fail('單次最多新增 50 位' + L.PERSON);
   var person = { key: NEXT_PERSON_KEY++, qty: {}, root: document.createElement('div') };
   person.root.className = 'family-person';
   person.root.innerHTML =
     '<div class="family-head"><strong class="person-label"></strong><button type="button" class="mini-btn">移除</button></div>' +
-    '<label>功德主姓名 <span class="req">*</span></label>' +
-    '<input type="text" class="person-name" placeholder="功德主姓名">' +
+    '<label>'+escHtml(L.PERSON)+'姓名 <span class="req">*</span></label>' +
+    '<input type="text" class="person-name" placeholder="'+escHtml(L.PERSON)+'姓名">' +
     '<div class="person-items"></div>' +
     '<div class="subtotal">小計：<span>NT$ 0</span></div>';
   FAMILY.push(person);
   $('familyPeople').appendChild(person.root);
   buildSteppers(person.root.querySelector('.person-items'), person.qty);
   person.root.querySelector('.mini-btn').onclick = function(){
-    if (FAMILY.length <= 1) return fail('家庭模式至少要保留一位功德主');
+    if (FAMILY.length <= 1) return fail('團體／家庭模式至少要保留一位' + L.PERSON);
     FAMILY = FAMILY.filter(function(x){ return x.key !== person.key; });
     person.root.remove(); refreshPersonLabels(); recalc();
   };
@@ -300,7 +310,7 @@ if (MODE === 'family') {
   $('familyContactWrap').style.display = 'block';
   $('singleItemsWrap').style.display = 'none';
   $('familyItemsWrap').style.display = 'block';
-  $('itemsTitle').textContent = '功德主與報名品項';
+  $('itemsTitle').textContent = L.PERSON + '與' + L.ITEMS;
   addPerson();
   $('btnAddPerson').onclick = addPerson;
 } else {
@@ -329,13 +339,13 @@ PAY_OPTIONS.forEach(function(p){
 $('btnSubmit').onclick = function(){
   var name = MODE === 'family' ? $('f_contact').value.trim() : $('f_name').value.trim();
   var phone = $('f_phone').value.trim();
-  if (!name){ return fail(MODE === 'family' ? '請填聯絡人姓名' : '請填功德主姓名'); }
+  if (!name){ return fail('請填' + (MODE === 'family' ? L.CONTACT : L.PERSON) + '姓名'); }
   if (!phone){ return fail('請填聯絡電話'); }
   var people = [];
   if (MODE === 'family') {
     for (var pi = 0; pi < FAMILY.length; pi++) {
       var personName = FAMILY[pi].root.querySelector('.person-name').value.trim();
-      if (!personName) return fail('請填第 ' + (pi + 1) + ' 位功德主姓名');
+      if (!personName) return fail('請填第 ' + (pi + 1) + ' 位' + L.PERSON + '姓名');
       if (!qtySelected(FAMILY[pi].qty)) return fail(personName + ' 請至少選一項品項');
       var minErr = '';
       (CFG.QTY_ITEMS||[]).forEach(function(it){var v=Number(FAMILY[pi].qty[it.id]||0);if(!minErr&&it.pricingMode==='minimum'&&v>0&&v<it.minAmount)minErr=it.id+' 最低金額為 '+money(it.minAmount);});
@@ -350,7 +360,7 @@ $('btnSubmit').onclick = function(){
   if(MODE!=='family')(CFG.QTY_ITEMS||[]).forEach(function(it){var v=Number(QTY[it.id]||0);if(!singleMinErr&&it.pricingMode==='minimum'&&v>0&&v<it.minAmount)singleMinErr=it.id+' 最低金額為 '+money(it.minAmount);});
   if(singleMinErr)return fail(singleMinErr);
   var capacityError = checkCapacity(); if (capacityError) return fail(capacityError);
-  if (!PAY){ return fail('請選擇繳款方式'); }
+  if (!PAY){ return fail('請選擇' + L.PAYMENT); }
   if (!$('f_agree').checked){ return fail('請勾選個人資料同意'); }
 
   var last5 = $('f_last5').value.trim();
@@ -361,13 +371,17 @@ $('btnSubmit').onclick = function(){
   }
 
   var note = $('f_note').value.trim();
-  if (note.length > 2000) return fail('備註過長（' + note.length + ' 字），請縮短至 2000 字以內');
+  if (note.length > 2000) return fail(L.NOTE + '過長（' + note.length + ' 字），請縮短至 2000 字以內');
   var custom = readCustomPayload();
   if (custom.error) return fail(custom.error);
+
+  var email = CFG.NOTIFY_ON ? $('f_email').value.trim() : '';
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail('Email 格式不正確，請確認或留空');
 
   var payload = {
     '電話': phone,
     '地址': $('f_addr').value.trim(),
+    'Email': email,
     '繳款方式': PAY,
     '匯款日期': $('f_remitdate').value.trim(),
     '帳號後五碼': last5,                                 // 字串，保留前導 0
@@ -391,15 +405,15 @@ $('btnSubmit').onclick = function(){
   // GAS 伺服器端直打 Notion（不經 n8n，前端不含 token／DB ID）
   google.script.run
     .withSuccessHandler(function(j){
-      if (!j || !j.ok) { btn.disabled = false; btn.textContent = '送出報名'; return fail('送出失敗：' + ((j && j.error) || '未知錯誤')); }
+      if (!j || !j.ok) { btn.disabled = false; btn.textContent = SUBMIT_LABEL; return fail('送出失敗：' + ((j && j.error) || '未知錯誤')); }
       var m = $('msg'); m.className = 'msg ok';
       m.textContent = '🙏 ' + name + '，報名成功！' +
-        (MODE === 'family' ? ('\n共 ' + people.length + ' 位功德主。') : '') +
+        (MODE === 'family' ? ('\n共 ' + people.length + ' 位' + L.PERSON + '。') : '') +
         (j.registrationId ? ('\n報名編號：' + j.registrationId + '（請妥善保存）') : '') +
-        '\n總金額 ' + money(total()) + '，本會將盡快與您確認。';
+        '\n' + L.TOTAL + ' ' + money(total()) + '，主辦單位將盡快與您確認。';
       btn.textContent = '已送出'; window.scrollTo(0, document.body.scrollHeight);
     })
-    .withFailureHandler(function(e){ btn.disabled = false; btn.textContent = '送出報名'; fail('送出失敗：' + e.message); })
+    .withFailureHandler(function(e){ btn.disabled = false; btn.textContent = SUBMIT_LABEL; fail('送出失敗：' + e.message); })
     .submitApi(payload);
 };
 

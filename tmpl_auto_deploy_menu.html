@@ -12,20 +12,34 @@ if (-not (Test-Path -LiteralPath $accountHelper)) {
   exit 1
 }
 . $accountHelper
+$script:SelectedDeployAccount = $null
 
 function Wait-ForUser {
   Write-Host ''
   Read-Host '按 Enter 返回選單' | Out-Null
 }
 
-function Show-Account {
+function Show-Account([switch]$AllowManualEntry, [switch]$SkipProfileProbe) {
   Write-Host '目前登入帳號：' -ForegroundColor Cyan
-  $email = Get-ClaspAccountEmail
+  $email = Get-ClaspAccountEmail -SkipProfileProbe:$SkipProfileProbe
   if (-not $email) {
-    Write-Host '目前沒有可用的 Google 登入憑證。' -ForegroundColor Yellow
-    return $false
+    if (-not (Test-ClaspAuthorized -UseCachedResult)) {
+      Write-Host '目前沒有可用的 Google 登入憑證，或憑證已要求重新驗證。' -ForegroundColor Yellow
+      return $false
+    }
+    Write-Host 'clasp 已登入，但 Google 沒有回傳帳號 Email。' -ForegroundColor Yellow
+    if (-not $AllowManualEntry) {
+      Write-Host '請選「更換 Google 帳號」重新驗證。' -ForegroundColor Yellow
+      return $false
+    }
+    $email = (Read-Host '請輸入剛才登入的完整 Google Email').Trim().ToLowerInvariant()
+    if (-not (Test-GoogleAccountEmail $email)) {
+      Write-Host 'Email 格式不正確，已停止，尚未進行部署。' -ForegroundColor Red
+      return $false
+    }
   }
   Use-DeploymentAccountProfile $email | Out-Null
+  $script:SelectedDeployAccount = $email
   Write-Host $email -ForegroundColor Green
   $profiles = Get-DeploymentAccountProfiles
   if ($profiles.Count -gt 0) {
@@ -50,7 +64,7 @@ function Ensure-Account {
   }
 
   Write-Host ''
-  return (Show-Account)
+  return (Show-Account -AllowManualEntry -SkipProfileProbe)
 }
 
 function Start-Deploy {
@@ -58,7 +72,12 @@ function Start-Deploy {
   Write-Host '開始執行部署，請依畫面提示操作。' -ForegroundColor Cyan
   Write-Host ''
 
-  & pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'deploy.ps1')
+  $deployScript = Join-Path $PSScriptRoot 'deploy.ps1'
+  if ($script:SelectedDeployAccount) {
+    & pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File $deployScript -AccountEmail $script:SelectedDeployAccount
+  } else {
+    & pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File $deployScript
+  }
   $deployExit = $LASTEXITCODE
 
   Write-Host ''
@@ -121,9 +140,9 @@ function Change-AccountAndDeploy {
   Write-Host '               更換 Google 帳號'
   Write-Host '=================================================='
   Write-Host ''
-  $currentEmail = Get-ClaspAccountEmail
+  $currentEmail = Get-ActiveDeploymentAccount
+  if (-not $currentEmail) { $currentEmail = Get-ClaspAccountEmail }
   if ($currentEmail) {
-    Use-DeploymentAccountProfile $currentEmail | Out-Null
     Save-DeploymentAccountProfile $currentEmail
     Write-Host "目前 $currentEmail 的 Script ID、部署 ID 與網址已保存。" -ForegroundColor DarkGray
   }
@@ -142,7 +161,7 @@ function Change-AccountAndDeploy {
   }
 
   Write-Host ''
-  if (-not (Show-Account)) {
+  if (-not (Show-Account -AllowManualEntry -SkipProfileProbe)) {
     Wait-ForUser
     return
   }
@@ -150,6 +169,59 @@ function Change-AccountAndDeploy {
   Write-Host ''
   $confirm = Read-Host '確認帳號正確並開始部署？(y/N)'
   if ($confirm -ieq 'y') { Start-Deploy }
+}
+
+function Open-AuthorizationGuide {
+  Clear-Host
+  Write-Host '=================================================='
+  Write-Host '          首次授權／重新授權（簡易模式）'
+  Write-Host '=================================================='
+  Write-Host ''
+
+  if (-not (Show-Account)) {
+    Write-Host '請先用選項 1 完成第一次部署，或用選項 2 切換正確帳號。' -ForegroundColor Yellow
+    Wait-ForUser
+    return
+  }
+
+  $claspJson = Join-Path $PSScriptRoot '.clasp.json'
+  if (-not (Test-Path -LiteralPath $claspJson)) {
+    Write-Host '尚未建立 Apps Script 專案，請先回選單選 1「首次建立並部署」。' -ForegroundColor Yellow
+    Wait-ForUser
+    return
+  }
+
+  try {
+    $scriptId = (Get-Content -LiteralPath $claspJson -Raw | ConvertFrom-Json).scriptId
+  } catch {
+    Write-Host '讀不到 Apps Script 專案資料，請保留畫面以便協助排查。' -ForegroundColor Red
+    Wait-ForUser
+    return
+  }
+  if (-not $scriptId) {
+    Write-Host '.clasp.json 缺少 scriptId，請先重新完成部署。' -ForegroundColor Red
+    Wait-ForUser
+    return
+  }
+
+  $editorUrl = "https://script.google.com/d/$scriptId/edit"
+  Write-Host '即將自動打開正確的 Apps Script 專案；不需要貼程式碼。' -ForegroundColor Cyan
+  Write-Host ''
+  Write-Host '瀏覽器開啟後只做三件事：' -ForegroundColor Yellow
+  Write-Host '  1. 上方函式選單選 authorizeApp'
+  Write-Host '  2. 按「執行」，在 Google 畫面允許全部必要權限'
+  Write-Host '  3. 回編輯器再執行一次，直到顯示「執行完畢」'
+  Write-Host ''
+  Write-Host '請確認瀏覽器右上角 Google 帳號與上方顯示的部署帳號相同。' -ForegroundColor Yellow
+
+  try {
+    Start-Process -FilePath $editorUrl
+    Write-Host '已開啟瀏覽器。完成授權後即可重新整理後台。' -ForegroundColor Green
+  } catch {
+    Write-Host '無法自動開啟瀏覽器，請手動開啟：' -ForegroundColor Yellow
+    Write-Host $editorUrl -ForegroundColor Cyan
+  }
+  Wait-ForUser
 }
 
 if (-not (Get-Command clasp -ErrorAction SilentlyContinue)) {
@@ -161,7 +233,7 @@ if (-not (Get-Command clasp -ErrorAction SilentlyContinue)) {
 }
 
 if ($Validate) {
-  $requiredFunctions = @('Get-ClaspAccountEmail', 'Use-DeploymentAccountProfile', 'Save-DeploymentAccountProfile')
+  $requiredFunctions = @('Get-ClaspAccountEmail', 'Test-ClaspAuthorized', 'Test-GoogleAccountEmail', 'Use-DeploymentAccountProfile', 'Save-DeploymentAccountProfile')
   foreach ($name in $requiredFunctions) {
     if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
       Write-Host "部署選單環境檢查失敗：缺少 $name" -ForegroundColor Red
@@ -202,10 +274,11 @@ while ($true) {
   } else {
     Write-Host '  5. 截止報名並切換 close 頁（自動更新部署）'
   }
+  Write-Host '  6. 首次授權／重新授權（自動打開正確頁面）'
   Write-Host '  0. 離開'
   Write-Host ''
 
-  $selection = Read-Host '請輸入選項 [1/2/3/4/5/0]'
+  $selection = Read-Host '請輸入選項 [1/2/3/4/5/6/0]'
   switch ($selection) {
     '1' {
       Clear-Host
@@ -260,6 +333,7 @@ while ($true) {
       Wait-ForUser
     }
     '5' { Toggle-ClosedAndDeploy }
+    '6' { Open-AuthorizationGuide }
     '0' { exit 0 }
     default {
       Write-Host '選項無效，請重新輸入。' -ForegroundColor Yellow

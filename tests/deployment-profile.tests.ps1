@@ -30,6 +30,24 @@ function Assert-PreflightBeforeMutation([string]$Path, [string]$Call) {
   }
 }
 
+function Assert-AccountSelectionPropagation([string]$MenuPath, [string]$DeployPath) {
+  $menu = Get-Content -LiteralPath $MenuPath -Raw
+  $deploy = Get-Content -LiteralPath $DeployPath -Raw
+  if ($menu -notmatch '-AccountEmail\s+\$script:SelectedDeployAccount') {
+    throw "選單沒有把手動確認的帳號傳給部署程序：$MenuPath"
+  }
+  if ($deploy -notmatch '\[string\]\$AccountEmail' -or $deploy -notmatch '\$accountEmail\s*=\s*\$AccountEmail') {
+    throw "部署程序沒有接續選單確認的帳號：$DeployPath"
+  }
+  if ($menu -notmatch 'Show-Account -AllowManualEntry -SkipProfileProbe' -or
+      $menu -notmatch '\$currentEmail\s*=\s*Get-ActiveDeploymentAccount') {
+    throw "更換帳號仍會先做不必要的既有帳號網路探測：$MenuPath"
+  }
+  if ($deploy -notmatch 'Get-ClaspAccountEmail -SkipProfileProbe:\(\[bool\]\$AccountEmail\)') {
+    throw "選單已確認帳號後，部署子程序仍會逐一探測既有帳號：$DeployPath"
+  }
+}
+
 $projectRoot = Split-Path -Parent $PSScriptRoot
 @(
   'deploy.ps1',
@@ -41,6 +59,8 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 ) | ForEach-Object { Assert-PowerShellSyntax (Join-Path $projectRoot $_) }
 Assert-PreflightBeforeMutation (Join-Path $projectRoot 'deploy.ps1') 'Invoke-GeneratorPreflight'
 Assert-PreflightBeforeMutation (Join-Path $projectRoot 'tmpl_auto_deploy_ps1.html') 'Invoke-ActivityPreflight'
+Assert-AccountSelectionPropagation (Join-Path $projectRoot 'deployment-menu.ps1') (Join-Path $projectRoot 'deploy.ps1')
+Assert-AccountSelectionPropagation (Join-Path $projectRoot 'tmpl_auto_deploy_menu.html') (Join-Path $projectRoot 'tmpl_auto_deploy_ps1.html')
 
 try {
   New-Item -ItemType Directory -Path $testRoot | Out-Null
@@ -59,6 +79,42 @@ try {
   Set-Content -LiteralPath (Join-Path $betaDir '部署網址.txt') -Value 'URL_BETA' -NoNewline
 
   . (Join-Path $testRoot 'deployment-account.ps1')
+
+  $global:FakeClaspMode = 'json-email'
+  $global:FakeClaspProbeCount = 0
+  function global:clasp {
+    if ($global:FakeClaspMode -eq 'json-email' -and ($args -join ' ') -eq '--json show-authorized-user') {
+      $global:LASTEXITCODE = 0
+      Write-Output '{"loggedIn":true,"email":"Json.User@Example.com"}'
+      return
+    }
+    if ($global:FakeClaspMode -eq 'unknown-profile') {
+      if (($args -join ' ') -eq '--json show-authorized-user') {
+        $global:LASTEXITCODE = 0
+        Write-Output '{"loggedIn":true}'
+        return
+      }
+      if ($args.Count -eq 3 -and $args[0] -eq '--project' -and $args[2] -eq 'list-deployments' -and
+          $args[1] -like '*beta@example.com*') {
+        $global:FakeClaspProbeCount++
+        $global:LASTEXITCODE = 0
+        Write-Output 'Found 1 deployment.'
+        return
+      }
+    }
+    $global:LASTEXITCODE = 1
+    Write-Output 'Not logged in.'
+  }
+
+  Assert-Equal 'json.user@example.com' (Get-ClaspAccountEmail) '沒有解析 clasp 3.x JSON 帳號輸出'
+  $global:FakeClaspMode = 'unknown-profile'
+  Assert-Equal $null (Get-ClaspAccountEmail -SkipProfileProbe) '快速換帳路徑不應探測既有 profile'
+  Assert-Equal '0' ([string]$global:FakeClaspProbeCount) '快速換帳路徑仍呼叫了 list-deployments'
+  Assert-Equal 'True' ([string](Test-ClaspAuthorized -UseCachedResult)) '沒有沿用剛取得的 clasp 授權狀態'
+  Assert-Equal 'beta@example.com' (Get-ClaspAccountEmail) 'unknown user 時沒有從可存取的既有部署辨識帳號'
+  Remove-Item Function:\clasp -Force
+  Remove-Variable FakeClaspMode -Scope Global -ErrorAction SilentlyContinue
+  Remove-Variable FakeClaspProbeCount -Scope Global -ErrorAction SilentlyContinue
 
   Use-DeploymentAccountProfile 'beta@example.com' | Out-Null
   Assert-Equal 'beta@example.com' (Get-ActiveDeploymentAccount) '切換後作用中帳號錯誤'

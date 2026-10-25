@@ -4,17 +4,18 @@
 <meta charset="UTF-8">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--red:{{THEME_PRIMARY}};--gold:{{THEME_GOLD}};--ink:#2C1A0E;--bg:#f5f0e8;--card:#fff;--line:#e5d9c0}
-body{font-family:'Microsoft JhengHei','Noto Sans TC',sans-serif;background:var(--bg);color:var(--ink);font-size:16px;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
-.box{background:var(--card);border:1px solid var(--line);border-radius:14px;max-width:520px;width:100%;text-align:center;padding:44px 26px;box-shadow:0 4px 20px rgba(0,0,0,.06)}
+:root{--red:{{THEME_PRIMARY}};--gold:{{THEME_GOLD}};--ink:#2C1A0E;--bg:{{THEME_BG}};--card:#fff;--line:#e5d9c0;--radius:{{CARD_RADIUS}};--font-size:{{FONT_SIZE}}}
+body{font-family:'Microsoft JhengHei','Noto Sans TC',sans-serif;background:var(--bg);color:var(--ink);font-size:var(--font-size);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+body.shadow-none .box{box-shadow:none}body.shadow-soft .box{box-shadow:0 4px 20px rgba(0,0,0,.08)}body.shadow-strong .box{box-shadow:0 12px 32px rgba(0,0,0,.18)}
+.box{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);max-width:520px;width:100%;text-align:center;padding:44px 26px;box-shadow:0 4px 20px rgba(0,0,0,.06)}
 .lamp{font-size:56px;margin-bottom:12px}
 .lamp img{display:block;margin:0 auto;max-width:100%;max-height:260px;object-fit:contain;border-radius:8px}
-h1{color:var(--red);font-size:22px;margin-bottom:16px}
-p{font-size:17px;line-height:1.9;color:#4a3826}
+h1{color:var(--red);font-size:calc(var(--font-size) + 6px);margin-bottom:16px}
+p{font-size:calc(var(--font-size) + 1px);line-height:1.9;color:#4a3826}
 .foot{margin-top:22px;font-size:13px;color:#9a8a70}
 </style>
 </head>
-<body>
+<body class="shadow-{{CARD_SHADOW}}">
   <div class="box">
     <div class="lamp">{{LOGO_TAG}}</div>
     <h1>{{EVENT_NAME_HTML}}</h1>

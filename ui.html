@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<title>宮廟共用報名表產生器</title>
+<title>通用活動報名表產生器</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{--red:#8B0000;--red-dark:#650000;--gold:#C8922A;--ink:#2C1A0E;--muted:#766850;--bg:#f5f0e8;--card:#fff;--line:#e5d9c0;--soft:#fffaf1;--ok:#287a45;--shadow:0 12px 32px rgba(67,42,17,.08)}
@@ -14,6 +14,10 @@ body{font-family:'Microsoft JhengHei','Noto Sans TC',sans-serif;background:radia
 .eyebrow{display:inline-flex;align-items:center;gap:6px;color:var(--red);background:#f9ece8;border:1px solid #ebcbc4;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:800;letter-spacing:.08em;margin-bottom:8px}
 h1{color:var(--red);font-size:clamp(24px,4vw,34px);line-height:1.25;margin-bottom:7px}
 .sub{color:var(--muted);font-size:15px;max-width:780px}
+.hero-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}
+.hero-link{display:inline-flex;align-items:center;gap:6px;color:var(--red);background:#fff;border:1px solid var(--gold);border-radius:999px;padding:7px 13px;text-decoration:none;font-size:14px;font-weight:800}
+.hero-link:hover{background:#fff7e8;transform:translateY(-1px)}
+.public-badge{display:inline-flex;align-items:center;border:1px solid #b7d8c1;border-radius:999px;padding:7px 13px;color:#17623a;font-size:14px;font-weight:800;background:#f0fbf4}
 .flowbar{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:20px}
 .flowstep{display:flex;align-items:center;gap:9px;min-width:0;text-decoration:none;color:var(--muted);background:rgba(255,255,255,.78);border:1px solid var(--line);border-radius:12px;padding:9px 11px;font-size:13px;font-weight:700;transition:.18s ease}
 .flowstep:hover{border-color:var(--gold);transform:translateY(-1px)}
@@ -39,6 +43,7 @@ textarea{min-height:60px;resize:vertical}
 .row>div{flex:1;min-width:120px}
 .chk{display:flex;align-items:center;gap:8px;margin-top:10px;font-weight:400}
 .chk input{width:18px;height:18px}
+input[type=range]{width:100%;accent-color:var(--red);cursor:pointer}
 .table-scroll{overflow-x:auto;margin:2px -4px 0;padding:0 4px 5px;scrollbar-color:var(--gold) transparent}
 .table-scroll table{min-width:720px}
 table{width:100%;border-collapse:collapse;margin-top:6px}
@@ -83,23 +88,43 @@ button.ghost{background:#fff;border:1px solid var(--gold);color:var(--red);borde
 .callout{display:flex;gap:10px;align-items:flex-start;border-radius:10px;padding:11px 12px;margin-top:7px;font-size:13px;line-height:1.55}
 .callout.warning{background:#fff5e2;border:1px solid #e9ca8e;color:#6f5321}
 .callout strong{display:block;color:var(--ink);margin-bottom:2px}
+.notion-guide{border:1px solid var(--line);border-radius:11px;background:#fffaf1;margin:2px 0 15px;overflow:hidden}
+.notion-guide summary{cursor:pointer;list-style:none;padding:12px 14px;color:var(--red);font-weight:800;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.notion-guide summary::-webkit-details-marker{display:none}
+.notion-guide summary::after{content:'＋';display:grid;place-items:center;width:24px;height:24px;flex:0 0 24px;border-radius:50%;background:#f3e6cc;color:var(--red);font-size:17px}
+.notion-guide[open] summary::after{content:'－'}
+.notion-guide-body{border-top:1px solid var(--line);padding:14px}
+.notion-guide-intro{color:var(--muted);font-size:13px;margin-bottom:12px}
+.notion-steps{list-style:none;counter-reset:notion-step;display:grid;gap:11px}
+.notion-steps li{counter-increment:notion-step;position:relative;padding:0 0 0 38px;min-height:30px;font-size:13px;color:#5f513e}
+.notion-steps li::before{content:counter(notion-step);position:absolute;left:0;top:0;display:grid;place-items:center;width:27px;height:27px;border-radius:50%;background:var(--red);color:#fff;font-weight:800}
+.notion-steps strong{display:block;color:var(--ink);font-size:14px;margin-bottom:2px}
+.notion-guide a{color:var(--red);font-weight:700;text-underline-offset:2px}
+.notion-checks{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:13px}
+.notion-check{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px;color:#655641;font-size:12px;line-height:1.45}
+.notion-errors{margin-top:13px;border-top:1px dashed #d8c9ad;padding-top:11px}
+.notion-errors strong{display:block;color:var(--ink);font-size:13px;margin-bottom:5px}
+.notion-errors ul{padding-left:18px;color:#6c5d47;font-size:12px;line-height:1.6}
+@media(max-width:560px){.notion-checks{grid-template-columns:1fr}}
 code{background:#f3ece0;padding:1px 5px;border-radius:4px;font-size:13px}
-.pv{--pp:#8B0000;--pg:#C8922A;background:#f5f0e8;border:1px solid #e5d9c0;border-radius:12px;padding:16px;max-width:360px;margin:0 auto;font-size:13px;line-height:1.5}
+.pv{--pp:#8B0000;--pg:#C8922A;--pfs:13px;background:#f5f0e8;border:1px solid #e5d9c0;border-radius:12px;padding:16px;max-width:360px;margin:0 auto;font-size:var(--pfs);line-height:1.5}
+.pv-stage{overflow:auto;padding:2px}.pv.desktop{width:680px;max-width:none}.pv.phone{width:360px;max-width:100%}
+.pv-head{text-align:center;margin-bottom:10px;border-radius:inherit;padding:4px}.pv.layout-banner .pv-head{display:grid;grid-template-columns:72px 1fr;column-gap:10px;align-items:center;text-align:left}.pv.layout-banner .pv-lamp{grid-row:1/4}.pv.layout-banner .pv-title,.pv.layout-banner .pv-meta{text-align:left}.pv.layout-poster .pv-head{background:var(--pp);padding:14px}.pv.layout-poster .pv-title{color:#fff}.pv.layout-poster .pv-meta,.pv.layout-poster .pv-desc{color:#fff!important}.pv.shadow-none .pv-box{box-shadow:none}.pv.shadow-soft .pv-box{box-shadow:0 2px 10px rgba(0,0,0,.07)}.pv.shadow-strong .pv-box{box-shadow:0 10px 24px rgba(0,0,0,.14)}
 .pv-lamp{text-align:center;font-size:30px;line-height:1}
 .pv-lamp img{display:block;margin:0 auto;max-width:100%;max-height:140px;object-fit:contain;border-radius:6px}
-.pv-title{text-align:center;color:var(--pp);font-weight:800;font-size:16px;margin-top:4px}
-.pv-meta{text-align:center;color:#8a7a60;font-size:11px;margin-bottom:12px;min-height:14px}
+.pv-title{text-align:center;color:var(--pp);font-weight:800;font-size:calc(var(--pfs) + 3px);margin-top:4px}
+.pv-meta{text-align:center;color:#8a7a60;font-size:calc(var(--pfs) - 2px);margin-bottom:12px;min-height:14px}
 .pv-box{background:#fff;border:1px solid #e5d9c0;border-radius:8px;padding:10px 12px;margin-bottom:8px}
-.pv-h{color:var(--pp);border-left:3px solid var(--pg);padding-left:7px;font-weight:700;margin-bottom:6px;font-size:13px}
+.pv-h{color:var(--pp);border-left:3px solid var(--pg);padding-left:7px;font-weight:700;margin-bottom:6px;font-size:var(--pfs)}
 .pv-item{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px dashed #ece3cf}
 .pv-item:last-child{border-bottom:none}
 .pv-item .n{color:#4a3826}
-.pv-item .p{color:#8a7a60;font-size:12px}
+.pv-item .p{color:#8a7a60;font-size:calc(var(--pfs) - 1px)}
 .pv-total{display:flex;justify-content:space-between;font-weight:800;color:var(--pp);border-top:2px solid var(--pg);padding-top:7px;margin-top:6px}
 .pv-pays{display:flex;gap:5px}
-.pv-pay{flex:1;text-align:center;border:1px solid #e5d9c0;border-radius:6px;padding:5px 0;font-size:11px;background:#fffdf8;color:#4a3826}
+.pv-pay{flex:1;text-align:center;border:1px solid #e5d9c0;border-radius:6px;padding:5px 0;font-size:calc(var(--pfs) - 2px);background:#fffdf8;color:#4a3826}
 .pv-pay.on{background:var(--pp);color:#fff;border-color:var(--pp)}
-.pv-btn{background:var(--pp);color:#fff;text-align:center;border-radius:8px;padding:10px;font-weight:700;font-size:14px}
+.pv-btn{background:var(--pp);color:#fff;text-align:center;border-radius:8px;padding:10px;font-weight:700;font-size:calc(var(--pfs) + 1px)}
 .pv-empty{color:#b0a289;text-align:center;padding:6px 0;font-size:12px}
 @media(max-width:940px){.workspace{grid-template-columns:1fr}.sidecol{position:static;display:grid;grid-template-columns:1fr 1fr;gap:16px}.sidecol .card{margin:0}.pv{max-width:100%}}
 @media(max-width:680px){body{padding:12px 10px 32px}.hero{padding:22px 18px 17px;border-radius:16px}.hero::after{font-size:68px;right:8px}.flowbar{grid-template-columns:1fr 1fr}.workspace{gap:14px}.sidecol{display:block}.sidecol .card{margin-bottom:14px}.card{padding:18px 15px;border-radius:14px}.presetbar{grid-template-columns:1fr}.row>div{flex-basis:100%}.btnbar button{flex:1}.payopts{display:grid;grid-template-columns:1fr 1fr}.flowstep{padding:8px}.flowstep .stepnum{flex-basis:25px;height:25px}.table-scroll{margin-left:-15px;margin-right:-15px;padding-left:15px;padding-right:15px}.inline-action{align-items:stretch}}
@@ -109,9 +134,10 @@ code{background:#f3ece0;padding:1px 5px;border-radius:4px;font-size:13px}
 <body>
 <div class="wrap">
   <header class="hero">
-    <div class="eyebrow">玄門・私人工作台</div>
-    <h1>🏮 宮廟共用報名表產生器</h1>
+    <div class="eyebrow">活動報名・私人工作台</div>
+    <h1>通用活動報名表產生器</h1>
     <p class="sub">依序完成活動設定、Notion 資料庫與專案下載，即可取得獨立可部署的 GAS 報名表＋後台。</p>
+    <div class="hero-actions"><span class="public-badge">🌐 公開使用・免登入 Google</span><a class="hero-link" href="<?!= APP_URL ?>?page=feedback" target="_top">💬 意見回饋</a></div>
     <nav class="flowbar" aria-label="建立流程">
       <a class="flowstep active" id="flowConfig" href="#basicCard" aria-current="step"><span class="stepnum">1</span><span>設定活動</span></a>
       <a class="flowstep" id="flowNotion" href="#notionCard"><span class="stepnum">2</span><span>連接 Notion</span></a>
@@ -127,21 +153,21 @@ code{background:#f3ece0;padding:1px 5px;border-radius:4px;font-size:13px}
     <h2>⭐ 常用設定範本</h2>
     <div class="presetbar">
       <div><label for="presetSelect">已儲存範本</label><select id="presetSelect" onchange="selectPreset()"><option value="">請選擇</option></select></div>
-      <div><label for="presetName">範本名稱</label><input type="text" id="presetName" maxlength="40" placeholder="例：玄門常用設定"></div>
+      <div><label for="presetName">範本名稱</label><input type="text" id="presetName" maxlength="40" placeholder="例：年度活動常用設定"></div>
     </div>
     <div class="btnbar">
       <button class="ghost" type="button" onclick="applyPreset()">載入範本</button>
       <button class="ghost" type="button" onclick="savePreset()">儲存／覆蓋</button>
       <button class="ghost" type="button" onclick="deletePreset()">刪除範本</button>
     </div>
-    <div class="hint">保存宮廟、銀行、主題色、品項、自訂欄位、繳款方式與報名模式；一般範本不保存活動名稱、日期、密碼或 Notion token。Notion token 請使用下方獨立的連線設定。</div>
+    <div class="hint">保存主辦單位、銀行、外觀、品項、自訂欄位、繳款方式與報名模式；一般範本不保存活動名稱、日期、密碼或 Notion token。Notion token 請使用下方獨立的連線設定。</div>
     <div class="status" id="presetStatus" role="status" aria-live="polite"></div>
   </section>
 
   <section class="card" id="basicCard">
     <h2>活動基本資料</h2>
-    <label for="orgName">宮廟／主辦單位名稱 <span class="req">*</span></label>
-    <input type="text" id="orgName" placeholder="例：○○宮、○○寺、○○道院">
+    <label for="orgName">主辦單位名稱 <span class="req">*</span></label>
+    <input type="text" id="orgName" placeholder="例：○○協會、○○公司、○○團隊">
     <div class="row">
       <div><label for="eventName">活動全名 <span class="req">*</span></label><input type="text" id="eventName" placeholder="例：丙午年關聖帝君聖壽發心"></div>
       <div><label for="event">活動代碼 EVENT <span class="req">*</span></label><input type="text" id="event" placeholder="英文小寫，例：guansheng"><div class="hint">產物檔名與識別用，只用英數與 -</div></div>
@@ -152,13 +178,13 @@ code{background:#f3ece0;padding:1px 5px;border-radius:4px;font-size:13px}
     </div>
     <label for="registrationMode">報名模式 <span class="req">*</span></label>
     <select id="registrationMode" onchange="renderPreview()">
-      <option value="single">一人一份（一位功德主＋多個品項）</option>
-      <option value="family">家庭代報（一位聯絡人＋多位功德主）</option>
+      <option value="single">一人一份（一位報名人＋多個品項）</option>
+      <option value="family">團體／家庭代報（一位聯絡人＋多位報名人）</option>
     </select>
-    <div class="hint">家庭代報會讓聯絡資料只填一次，每位功德主各自選擇品項，並以家庭編號串連後台資料。</div>
+    <div class="hint">團體／家庭代報會讓聯絡資料只填一次，每位報名人各自選擇品項，並以共同編號串連後台資料。</div>
     <div class="row">
       <div><label for="eventDate">活動日期</label><input type="date" id="eventDate"></div>
-      <div><label for="eventPlace">活動地點</label><input type="text" id="eventPlace" placeholder="例：本宮大殿"></div>
+      <div><label for="eventPlace">活動地點</label><input type="text" id="eventPlace" placeholder="例：總部會議廳、活動中心"></div>
       <div><label for="remitDeadline">匯款截止日期</label><input type="date" id="remitDeadline"></div>
     </div>
     <div class="row" style="margin-top:10px">
@@ -181,15 +207,35 @@ code{background:#f3ece0;padding:1px 5px;border-radius:4px;font-size:13px}
       </div>
       <div class="hint">會顯示在報名表與結束頁最上方，取代 🏮。上限 5MB；圖片會內嵌進 Config.gs（不上傳 Notion），檔案越大報名表載入越慢，建議壓到 ≤300KB 或改用 SVG。</div>
     </div>
-    <label class="chk"><input type="checkbox" id="hasGroup" checked onchange="toggleGroup()"> 報名表要有「所屬宮廟／分會／單位」欄</label>
+    <label class="chk"><input type="checkbox" id="hasGroup" checked onchange="toggleGroup()"> 報名表要有「所屬單位／分會／團體」欄</label>
     <div id="groupConfig">
       <div class="row">
-        <div><label for="groupField">欄位名稱</label><input type="text" id="groupField" value="所屬宮廟／單位"></div>
-        <div><label for="groupOptions">選項（每行一個）</label><textarea id="groupOptions">本宮
-友宮
+        <div><label for="groupField">欄位名稱</label><input type="text" id="groupField" value="所屬單位"></div>
+        <div><label for="groupOptions">選項（每行一個）</label><textarea id="groupOptions">本單位
+合作單位
 其他</textarea></div>
       </div>
     </div>
+  </section>
+
+  <section class="card" id="terminologyCard">
+    <h2>欄位用語與一鍵套用</h2>
+    <div class="row">
+      <div><label for="terminologyPreset">使用情境</label><select id="terminologyPreset"><option value="general">通用活動</option><option value="temple">宮廟祈福</option><option value="course">課程講座</option><option value="volunteer">志工招募</option><option value="ticket">票券活動</option></select></div>
+      <div style="display:flex;align-items:end"><button class="act" id="btnApplyTerminology" type="button" onclick="applyTerminologyPreset()">一鍵套用欄位名稱</button></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div><label for="labelPerson">主要報名對象</label><input type="text" id="labelPerson" maxlength="20" value="報名人" oninput="renderPreview()"></div>
+      <div><label for="labelContact">代報聯絡人</label><input type="text" id="labelContact" maxlength="20" value="聯絡人"></div>
+      <div><label for="labelItems">品項區塊</label><input type="text" id="labelItems" maxlength="20" value="報名項目" oninput="renderPreview()"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div><label for="labelPayment">付款區塊</label><input type="text" id="labelPayment" maxlength="20" value="付款方式" oninput="renderPreview()"></div>
+      <div><label for="labelNote">備註欄位</label><input type="text" id="labelNote" maxlength="20" value="備註"></div>
+      <div><label for="labelTotal">金額合計</label><input type="text" id="labelTotal" maxlength="20" value="總金額" oninput="renderPreview()"></div>
+    </div>
+    <div class="hint">會同步套用報名表、查詢頁與後台顯示文字；Notion 固定欄位鍵不更名，因此不影響資料寫入。若情境範本要改「所屬單位」的實際欄名，請在建立 Notion DB 前套用。</div>
+    <div class="status" id="terminologyStatus" role="status" aria-live="polite"></div>
   </section>
 
   <section class="card" id="itemsCard">
@@ -202,7 +248,7 @@ code{background:#f3ece0;padding:1px 5px;border-radius:4px;font-size:13px}
     </div>
     <div class="btnbar"><button class="ghost" id="btnAddItem" type="button" onclick="addItem()">＋ 加一項</button></div>
     <div class="row" style="margin-top:10px">
-      <div><label for="totalCapacity">活動總名額上限</label><input type="number" id="totalCapacity" min="0" value="0"><div class="hint">0＝不限；家庭模式以功德主人數計算。</div></div>
+      <div><label for="totalCapacity">活動總名額上限</label><input type="number" id="totalCapacity" min="0" value="0"><div class="hint">0＝不限；團體／家庭模式以報名人數計算。</div></div>
     </div>
     <div class="hint">建立 Notion DB 後會鎖定報名模式、繳款方式、品項與所屬單位設定，若要變更請重新建立。</div>
   </section>
@@ -227,13 +273,12 @@ code{background:#f3ece0;padding:1px 5px;border-radius:4px;font-size:13px}
       <label class="chk"><input type="checkbox" value="匯款" checked onchange="togglePaymentOptions()"> 匯款</label>
       <label class="chk"><input type="checkbox" value="刷卡" checked onchange="togglePaymentOptions()"> 刷卡</label>
       <label class="chk"><input type="checkbox" value="LinePay" checked onchange="togglePaymentOptions()"> LinePay</label>
-      <label class="chk"><input type="checkbox" value="功德系統" checked onchange="togglePaymentOptions()"> 功德系統</label>
     </div>
     <div id="bankConfig">
       <label for="bankBank">匯款銀行／分行 <span class="req">*</span></label>
       <input type="text" id="bankBank" placeholder="例：○○銀行 ○○分行（代號 000）">
       <div class="row">
-        <div><label for="bankAcct">匯款帳號 <span class="req">*</span></label><input type="text" id="bankAcct" placeholder="請填本宮帳號"></div>
+        <div><label for="bankAcct">匯款帳號 <span class="req">*</span></label><input type="text" id="bankAcct" placeholder="請填主辦單位收款帳號"></div>
         <div><label for="bankName">戶名 <span class="req">*</span></label><input type="text" id="bankName" placeholder="請填正式戶名"></div>
       </div>
       <div class="hint">只有前台使用者選擇「匯款」後，才會展開匯款日期、帳號後五碼與匯款金額必填欄位。</div>
@@ -254,14 +299,79 @@ code{background:#f3ece0;padding:1px 5px;border-radius:4px;font-size:13px}
         </div>
       </div>
     </div>
-    <div class="hint">產出的報名表／後台／結束頁會套用這兩色，可依各宮廟識別色調整。</div>
+    <label>快速風格</label>
+    <div class="btnbar" id="stylePresets">
+      <button class="ghost" type="button" onclick="applyStylePreset('temple')">經典典雅</button>
+      <button class="ghost" type="button" onclick="applyStylePreset('jade')">玉青清雅</button>
+      <button class="ghost" type="button" onclick="applyStylePreset('warm')">暖金柔和</button>
+      <button class="ghost" type="button" onclick="applyStylePreset('modern')">現代簡潔</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div>
+        <label for="themeBgHex">頁面背景色</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="color" id="themeBg" value="#F5F0E8" aria-label="選擇頁面背景色" style="width:52px;height:40px;padding:2px;border:1px solid var(--line);border-radius:8px">
+          <input type="text" id="themeBgHex" value="#F5F0E8" style="flex:1" oninput="syncColor('themeBg',this.value)">
+        </div>
+      </div>
+      <div>
+        <label for="cardRadius">卡片圓角</label>
+        <select id="cardRadius" onchange="renderPreview()">
+          <option value="6">俐落（6px）</option>
+          <option value="12" selected>適中（12px）</option>
+          <option value="20">柔和（20px）</option>
+        </select>
+      </div>
+    </div>
+    <div class="hint">產出的報名表、查詢頁、後台與截止頁會套用同一組風格；仍可個別微調顏色。</div>
+    <div class="row" style="margin-top:10px">
+      <div><label for="headerLayout">頁首版型</label><select id="headerLayout" onchange="renderPreview()"><option value="centered">經典置中</option><option value="banner">橫幅式</option><option value="poster">海報式</option></select></div>
+      <div><label for="fontSize">文字大小：<strong id="fontSizeValue">16px</strong></label><input type="range" id="fontSize" min="14" max="22" step="1" value="16" oninput="syncFontSize()"><div class="hint">14px 精簡、16px 標準、18px 以上適合長輩閱讀。</div></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div><label for="cardShadow">卡片陰影</label><select id="cardShadow" onchange="renderPreview()"><option value="none">無陰影</option><option value="soft" selected>淡陰影</option><option value="strong">明顯陰影</option></select></div>
+      <div><label for="submitLabel">送出按鈕文字</label><input type="text" id="submitLabel" maxlength="20" value="送出報名" oninput="renderPreview()"></div>
+    </div>
+  </section>
+
+  <section class="card" id="notifyCard">
+    <h2>報名確認信（選填）</h2>
+    <label class="chk"><input type="checkbox" id="notifyEnabled" onchange="toggleNotify()"> 報名成功後自動寄送確認信</label>
+    <div id="notifyConfig" style="display:none">
+      <label for="notifyAdminEmail">管理者收件 Email <span class="req">*</span></label>
+      <input type="text" id="notifyAdminEmail" placeholder="admin@example.com（可多個，用逗號分隔）">
+      <div class="hint">每次有人報名成功都會寄一封通知到這裡。</div>
+      <label class="chk" style="margin-top:8px"><input type="checkbox" id="notifySendUser" checked> 同時寄給報名人（有填 Email 才寄）</label>
+      <div class="hint">信件由產出專案的 GAS 以「部署擁有者」身分寄出；首次部署或新加寄信功能後，開網址會多要求一次 Gmail 寄信授權。一般帳號每日約 100 封寄信配額。寄信失敗不影響報名落地。</div>
+    </div>
   </section>
 
   <section class="card" id="notionCard">
     <h2 id="storageTitle">Notion 資料庫</h2>
     <div id="notionFields">
+      <details class="notion-guide" id="notionApiGuide">
+        <summary>第一次使用？查看 Notion API 設定教學</summary>
+        <div class="notion-guide-body">
+          <p class="notion-guide-intro">這裡需要的是 Notion 的 <strong>Installation access token</strong>，不是 Notion 帳號密碼。第一次設定約需 3～5 分鐘。</p>
+          <ol class="notion-steps">
+            <li><strong>確認你是工作區擁有者</strong>Notion 目前只有 Workspace owner 能建立內部連線；若你不是，請請擁有者代為建立。</li>
+            <li><strong>建立 Notion 內部連線</strong>前往 <a href="https://www.notion.so/profile/integrations/internal" target="_blank" rel="noopener noreferrer">Notion 連線設定</a>，按「New integration／新增連線」，名稱可填「通用報名表產生器」，並選對工作區。</li>
+            <li><strong>開啟需要的內容權限</strong>在 Capabilities 允許 Read content、Insert content、Update content，讓產生器能讀取建立位置、建立資料庫與寫入報名資料。</li>
+            <li><strong>複製 Token</strong>到 Configuration 找到 Installation access token，按 Copy，貼到下方 Token 欄位。Token 等同密碼，請勿截圖、公開或傳給他人。</li>
+            <li><strong>把目標位置分享給連線</strong>開啟要放資料的「活動總資料庫」或父頁面，按右上角 <code>•••</code> → Connections／連線 → Add connection，選取剛建立的連線。新連線預設沒有任何頁面權限，這一步不能省略。</li>
+            <li><strong>貼上目標網址</strong>在同一個資料庫或頁面按 <code>•••</code> → Copy link，將整段 Notion 網址貼到下方「建立位置」欄位，不必自己從網址找 32 碼 ID。</li>
+          </ol>
+          <div class="notion-checks" id="notionGuideChecklist" aria-label="建立前檢查">
+            <div class="notion-check">✓ Token 已貼入，前後沒有多餘空格</div>
+            <div class="notion-check">✓ 連線與目標位於同一工作區</div>
+            <div class="notion-check">✓ 目標頁面已加入該 Connection</div>
+          </div>
+          <div class="notion-errors"><strong>常見錯誤快速判斷</strong><ul><li><code>401</code>：Token 錯誤、失效或複製不完整，請重新 Copy。</li><li><code>403</code>：連線缺少讀取、插入或更新內容權限。</li><li><code>404</code>／找不到頁面：通常是尚未把目標頁面分享給連線，或選錯工作區。</li><li>找不到 32 碼 ID：直接貼完整 Notion 網址即可。</li></ul></div>
+          <div class="hint" style="margin-top:10px">仍有疑問可查看 <a href="https://developers.notion.com/guides/get-started/internal-connections" target="_blank" rel="noopener noreferrer">Notion 官方 Internal connections 教學</a>。</div>
+        </div>
+      </details>
       <label for="token">Notion Integration Token <span class="req">*</span></label>
-      <input type="password" id="token" autocomplete="off" spellcheck="false" placeholder="secret_xxx 或 ntn_xxx">
+      <input type="password" id="token" autocomplete="off" spellcheck="false" placeholder="secret_xxx 或 ntn_xxx" oninput="invalidateNotionCheck()">
       <div class="callout warning"><span>🔐</span><div><strong>機密提醒</strong>Token 會用來建立 DB，並寫入下載專案的 <code>Secrets.gs</code>（只在後端使用）。請使用僅能存取本活動資料庫的 Integration，不要使用高權限 Token。</div></div>
       <label for="parentMode">建立位置<span class="req">*</span></label>
       <select id="parentMode" onchange="toggleParentMode()">
@@ -269,13 +379,13 @@ code{background:#f3ece0;padding:1px 5px;border-radius:4px;font-size:13px}
         <option value="page">直接指定父頁面</option>
       </select>
       <label id="parentTargetLabel" for="parentTargetId">活動總資料庫 ID<span class="req">*</span></label>
-      <input type="text" id="parentTargetId" placeholder="貼活動總資料庫的 Notion 網址或 32 碼 ID">
+      <input type="text" id="parentTargetId" placeholder="貼活動總資料庫的 Notion 網址或 32 碼 ID" oninput="invalidateNotionCheck()">
       <div class="hint" id="parentTargetHint">系統會在總資料庫新增一筆活動紀錄，再於該紀錄內建立報名 DB，並自動新增／回填「報名資料庫 ID」欄。⚠️ 總資料庫要先把這個 integration 加進 Connections。</div>
       <div class="btnbar">
-        <button class="ghost" type="button" onclick="saveNotionSettings()">💾 儲存 Notion 連線</button>
-        <button class="ghost" type="button" onclick="clearNotionSettings()">清除已存連線</button>
-        <span id="savedNotionTag" class="hint"></span>
+        <button class="act" id="btnCheckNotion" type="button" onclick="checkNotionConnection()">🔎 一鍵檢查連線</button>
+        <span id="savedNotionTag" class="hint">🔐 公開版不會儲存 Token；重新整理後即清除</span>
       </div>
+      <div class="status" id="notionCheckStatus" role="status" aria-live="polite"></div>
       <div class="status" id="notionSaveStatus" role="status" aria-live="polite"></div>
     </div>
     <div class="btnbar">
@@ -310,23 +420,24 @@ code{background:#f3ece0;padding:1px 5px;border-radius:4px;font-size:13px}
 
     <section class="card" id="previewCard">
       <h2>即時預覽</h2>
-      <div class="hint" style="margin-bottom:10px">標題、主題色、Logo 與品項會同步更新。</div>
-      <div id="pv" class="pv">
-        <div class="pv-lamp" id="pvLamp">🏮</div>
+      <div class="btnbar" style="margin-bottom:10px"><button class="ghost" type="button" onclick="setPreviewDevice('phone')">手機</button><button class="ghost" type="button" onclick="setPreviewDevice('desktop')">桌面</button></div>
+      <div class="hint" style="margin-bottom:10px">標題、版型、字級、主題色、Logo 與品項會同步更新。</div>
+      <div class="pv-stage"><div id="pv" class="pv phone layout-centered shadow-soft">
+        <div class="pv-head"><div class="pv-lamp" id="pvLamp">🏮</div>
         <div class="pv-title" id="pvTitle">活動報名</div>
         <div class="pv-meta" id="pvMeta"></div>
-        <div class="pv-desc" id="pvDesc" style="white-space:pre-wrap;font-size:12px;color:#6b5d44;margin:4px 0 2px;line-height:1.5"></div>
+        <div class="pv-desc" id="pvDesc" style="white-space:pre-wrap;font-size:12px;color:#6b5d44;margin:4px 0 2px;line-height:1.5"></div></div>
         <div class="pv-box">
           <div class="pv-h" id="pvItemsTitle">報名品項</div>
           <div id="pvItems"></div>
-          <div class="pv-total"><span>總金額</span><span id="pvTotal">NT$ 0</span></div>
+          <div class="pv-total"><span id="pvTotalLabel">總金額</span><span id="pvTotal">NT$ 0</span></div>
         </div>
         <div class="pv-box">
-          <div class="pv-h">繳款方式</div>
+          <div class="pv-h" id="pvPaymentTitle">付款方式</div>
           <div class="pv-pays" id="pvPays"></div>
         </div>
-        <div class="pv-btn">送出報名</div>
-      </div>
+        <div class="pv-btn" id="pvSubmit">送出報名</div>
+      </div></div>
     </section>
   </aside>
   </div>
@@ -334,6 +445,7 @@ code{background:#f3ece0;padding:1px 5px;border-radius:4px;font-size:13px}
 
 <script>
 var RESERVED_FIELDS = <?!= JSON.stringify(GEN.RESERVED_FIELDS) ?>;
+var PUBLIC_MODE = <?!= JSON.stringify(GEN.PUBLIC_MODE) ?>;
 var DB_ID = '';
 var DB_SCHEMA_KEY = '';
 var SCHEMA_LOCKED = false;
@@ -341,6 +453,7 @@ var PRESETS = [];
 var NOTION_HAS_TOKEN = false;
 var DOWNLOAD_DONE = false;
 var LAST_CONFIG_ERROR = '';
+var LOCAL_PRESET_KEY = 'REG_FORM_PUBLIC_PRESETS_V1';
 
 function toggleSecret(id, btn){
   var input = document.getElementById(id);
@@ -358,7 +471,7 @@ function syncColor(id, hex){
     renderPreview();
   }
 }
-['themePrimary','themeGold'].forEach(function(id){
+['themePrimary','themeGold','themeBg'].forEach(function(id){
   document.getElementById(id).addEventListener('input', function(){
     document.getElementById(id + 'Hex').value = this.value;
     renderPreview();
@@ -368,12 +481,21 @@ function syncColor(id, hex){
 // 即時預覽：跟著標題／主題色／品項變化
 function renderPreview(){
   var pv = document.getElementById('pv');
+  ['centered','banner','poster'].forEach(function(x){pv.classList.remove('layout-'+x);});
+  ['none','soft','strong'].forEach(function(x){pv.classList.remove('shadow-'+x);});
+  pv.classList.add('layout-'+val('headerLayout'),'shadow-'+val('cardShadow'));
+  pv.style.setProperty('--pfs', Math.max(11,(parseInt(val('fontSize'),10)||16)-3)+'px');
   pv.style.setProperty('--pp', document.getElementById('themePrimary').value);
   pv.style.setProperty('--pg', document.getElementById('themeGold').value);
+  pv.style.background = document.getElementById('themeBg').value;
+  pv.style.borderRadius = val('cardRadius') + 'px';
+  pv.querySelectorAll('.pv-box').forEach(function(el){ el.style.borderRadius = val('cardRadius') + 'px'; });
   var name = val('eventName'), title = val('pageTitle');
   document.getElementById('pvTitle').textContent = title || (name ? name + '　報名' : '活動報名');
   document.getElementById('pvItemsTitle').textContent =
-    val('registrationMode') === 'family' ? '家庭功德主與報名品項' : '報名品項';
+    val('registrationMode') === 'family' ? (val('labelPerson') + '與' + val('labelItems')) : val('labelItems');
+  document.getElementById('pvPaymentTitle').textContent = val('labelPayment') || '付款方式';
+  document.getElementById('pvTotalLabel').textContent = val('labelTotal') || '總金額';
   var meta = [val('orgName'), val('eventDate'), val('eventPlace')].filter(Boolean).join('｜');
   document.getElementById('pvMeta').textContent = meta;
   document.getElementById('pvDesc').textContent = val('eventDesc') || '';
@@ -395,10 +517,58 @@ function renderPreview(){
   }
   document.getElementById('pvItems').innerHTML = html;
   document.getElementById('pvTotal').textContent = 'NT$ ' + total;
+  document.getElementById('pvSubmit').textContent = val('submitLabel') || '送出報名';
   var pays = selectedPaymentOptions();
   document.getElementById('pvPays').innerHTML = pays.map(function(p, i){
     return '<div class="pv-pay'+(i===0?' on':'')+'">'+esc(p)+'</div>';
   }).join('') || '<div class="pv-empty">（尚未選擇繳款方式）</div>';
+}
+
+function setPreviewDevice(device){
+  var pv=document.getElementById('pv');pv.classList.remove('phone','desktop');pv.classList.add(device==='desktop'?'desktop':'phone');
+}
+
+function syncFontSize(){
+  document.getElementById('fontSizeValue').textContent=val('fontSize')+'px';
+  renderPreview();
+}
+
+function applyTerminologyPreset(){
+  if(SCHEMA_LOCKED){show('terminologyStatus','err','Notion DB 已建立；情境套用可能改變「所屬單位」實際欄名，請重新整理後先套用再建 DB。');return;}
+  var presets={
+    general:{person:'報名人',contact:'聯絡人',group:'所屬單位',items:'報名項目',payment:'付款方式',note:'備註',total:'總金額',submit:'送出報名'},
+    temple:{person:'功德主',contact:'聯絡人',group:'所屬宮廟／單位',items:'祈福品項',payment:'繳款方式',note:'祈願／備註',total:'功德金合計',submit:'送出報名'},
+    course:{person:'學員',contact:'聯絡人',group:'所屬公司／學校',items:'課程方案',payment:'付款方式',note:'學習需求／備註',total:'應付金額',submit:'確認報名'},
+    volunteer:{person:'志工',contact:'聯絡人',group:'所屬團體',items:'服務項目',payment:'費用方式',note:'服務備註',total:'費用合計',submit:'送出申請'},
+    ticket:{person:'參加者',contact:'聯絡人',group:'公司／團體',items:'票種／方案',payment:'付款方式',note:'訂單備註',total:'應付金額',submit:'立即登記'}
+  };
+  var p=presets[val('terminologyPreset')]||presets.general;
+  document.getElementById('labelPerson').value=p.person;
+  document.getElementById('labelContact').value=p.contact;
+  document.getElementById('groupField').value=p.group;
+  document.getElementById('labelItems').value=p.items;
+  document.getElementById('labelPayment').value=p.payment;
+  document.getElementById('labelNote').value=p.note;
+  document.getElementById('labelTotal').value=p.total;
+  document.getElementById('submitLabel').value=p.submit;
+  renderPreview();updateWorkspaceState();
+  show('terminologyStatus','ok','✅ 已套用「'+document.getElementById('terminologyPreset').selectedOptions[0].textContent+'」，仍可逐欄微調。');
+}
+
+function applyStylePreset(name){
+  var styles={
+    temple:['#8B0000','#C8922A','#F5F0E8','12'],
+    jade:['#176B5B','#B38A3E','#F1F6F2','12'],
+    warm:['#9A4E25','#D4A24C','#FFF7EA','20'],
+    modern:['#334155','#0F766E','#F1F5F9','6']
+  };
+  var s=styles[name]||styles.temple;
+  ['themePrimary','themeGold','themeBg'].forEach(function(id,i){
+    document.getElementById(id).value=s[i];document.getElementById(id+'Hex').value=s[i];
+  });
+  document.getElementById('cardRadius').value=s[3];
+  document.getElementById('cardShadow').value=name==='modern'?'none':'soft';
+  renderPreview();
 }
 function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
 
@@ -502,6 +672,7 @@ function readItems(){
 }
 function val(id){ return document.getElementById(id).value.trim(); }
 function show(id, cls, msg){ var e=document.getElementById(id); e.className='status '+cls; e.textContent=msg; }
+function usageLogWarning(r){ return r&&r.usageLogWarning ? '\n⚠️ 使用紀錄未寫入：'+r.usageLogWarning : ''; }
 
 function setReadyState(itemId, textId, ready, detail){
   var item = document.getElementById(itemId);
@@ -564,7 +735,11 @@ function togglePaymentOptions(){
   document.getElementById('bankConfig').style.display = selectedPaymentOptions().indexOf('匯款') >= 0 ? 'block' : 'none';
   renderPreview();
 }
+function toggleNotify(){
+  document.getElementById('notifyConfig').style.display = document.getElementById('notifyEnabled').checked ? 'block' : 'none';
+}
 function toggleParentMode(){
+  invalidateNotionCheck();
   var activityMode = val('parentMode') === 'activity_database';
   document.getElementById('parentTargetLabel').innerHTML = (activityMode ? '活動總資料庫 ID' : '父頁面 Parent Page') + '<span class="req">*</span>';
   document.getElementById('parentTargetId').placeholder = activityMode ? '貼活動總資料庫的 Notion 網址或 32 碼 ID' : '貼要建立報名 DB 的 Notion 頁面網址或 32 碼 ID';
@@ -573,7 +748,37 @@ function toggleParentMode(){
     : '報名 DB 會直接建立在此頁面底下。⚠️ 該頁面要先把這個 integration 加進 Connections。';
   document.getElementById('btnDb').textContent = activityMode ? '建立活動頁面＋報名 DB' : '建立 Notion DB';
 }
+function invalidateNotionCheck(){
+  var status=document.getElementById('notionCheckStatus');
+  if(status){status.className='status';status.textContent='';}
+}
+function checkNotionConnection(){
+  var token=val('token'),parentMode=val('parentMode'),target=val('parentTargetId');
+  if(!token&&!NOTION_HAS_TOKEN){show('notionCheckStatus','err','請先輸入或儲存 Notion Integration Token');return;}
+  if(!target){show('notionCheckStatus','err',parentMode==='activity_database'?'請貼上活動總資料庫網址或 ID':'請貼上父頁面網址或 ID');return;}
+  var btn=document.getElementById('btnCheckNotion');
+  btn.disabled=true;btn.textContent='檢查中…';
+  show('notionCheckStatus','info','正在驗證 Token 與目標存取權限，全程不會寫入資料…');
+  google.script.run.withSuccessHandler(function(r){
+    btn.disabled=false;btn.textContent='🔎 一鍵檢查連線';
+    if(!r||!r.ok){show('notionCheckStatus','err','❌ '+((r&&r.error)||'Notion 連線檢查失敗'));return;}
+    if(r.targetId)document.getElementById('parentTargetId').value=r.targetId;
+    var lines=(r.checks||[]).map(function(x){return '✅ '+x;});
+    if(r.note)lines.push('ℹ️ '+r.note);
+    show('notionCheckStatus','ok',lines.join('\n'));
+  }).withFailureHandler(function(e){
+    btn.disabled=false;btn.textContent='🔎 一鍵檢查連線';
+    show('notionCheckStatus','err','❌ '+e.message);
+  }).checkNotionConnectionApi({token:token,parentMode:parentMode,parentTargetId:target});
+}
 function applyNotionSettingsState(r){
+  if(PUBLIC_MODE){
+    NOTION_HAS_TOKEN=false;
+    document.getElementById('savedNotionTag').textContent='🔐 公開版不會儲存 Token；重新整理後即清除';
+    document.getElementById('token').placeholder='secret_xxx 或 ntn_xxx（僅本次使用）';
+    updateWorkspaceState();
+    return;
+  }
   NOTION_HAS_TOKEN = !!(r && r.hasToken);
   document.getElementById('savedNotionTag').textContent = NOTION_HAS_TOKEN ? '✅ 已儲存 Token' : '尚未儲存 Token';
   document.getElementById('token').placeholder = NOTION_HAS_TOKEN ? '已儲存，可留空沿用；輸入新 Token 可覆蓋' : 'secret_xxx 或 ntn_xxx';
@@ -582,12 +787,15 @@ function applyNotionSettingsState(r){
   updateWorkspaceState();
 }
 function loadNotionSettings(){
+  if(PUBLIC_MODE){applyNotionSettingsState({hasToken:false,publicMode:true});return;}
   google.script.run.withSuccessHandler(function(r){
     if(!r||!r.ok){show('notionSaveStatus','err',(r&&r.error)||'Notion 連線設定讀取失敗');return;}
     applyNotionSettingsState(r);
   }).withFailureHandler(function(e){show('notionSaveStatus','err',e.message);}).loadNotionSettingsApi();
 }
 function saveNotionSettings(){
+  if(PUBLIC_MODE){show('notionSaveStatus','info','公開版不會儲存 Token；請直接完成本次建表與下載');return;}
+  invalidateNotionCheck();
   var token=val('token'),parentMode=val('parentMode'),target=val('parentTargetId');
   if(!target){show('notionSaveStatus','err',parentMode==='activity_database'?'請填活動總資料庫 ID':'請填父頁面 ID');return;}
   if(!token&&!NOTION_HAS_TOKEN){show('notionSaveStatus','err','第一次儲存請輸入 Notion API token');return;}
@@ -600,6 +808,7 @@ function saveNotionSettings(){
   }).withFailureHandler(function(e){show('notionSaveStatus','err',e.message);}).saveNotionSettingsApi({token:token,parentMode:parentMode,parentTargetId:target});
 }
 function clearNotionSettings(){
+  if(PUBLIC_MODE){show('notionSaveStatus','info','公開版沒有共用連線設定；重新整理頁面即可清除目前輸入');return;}
   if(!confirm('確定清除已儲存的 Notion Token 與建立位置 ID？'))return;
   google.script.run.withSuccessHandler(function(r){
     if(!r||!r.ok){show('notionSaveStatus','err',(r&&r.error)||'清除失敗');return;}
@@ -616,10 +825,11 @@ function renderPresetList(selected){
   if(selected)sel.value=selected;
 }
 function loadPresets(){
-  google.script.run.withSuccessHandler(function(r){
-    if(!r||!r.ok){show('presetStatus','err',(r&&r.error)||'範本讀取失敗');return;}
-    PRESETS=r.presets||[];renderPresetList();
-  }).withFailureHandler(function(e){show('presetStatus','err',e.message);}).listPresetsApi();
+  try{
+    var stored=JSON.parse(localStorage.getItem(LOCAL_PRESET_KEY)||'[]');
+    PRESETS=Array.isArray(stored)?stored.filter(function(p){return p&&p.name&&p.data;}).slice(0,30):[];
+    renderPresetList();
+  }catch(e){PRESETS=[];renderPresetList();show('presetStatus','err','瀏覽器範本讀取失敗，請清除本站資料後重試');}
 }
 function selectPreset(){
   var name=val('presetSelect');
@@ -629,11 +839,25 @@ function savePreset(){
   var name=val('presetName');
   if(!name){show('presetStatus','err','請填範本名稱');return;}
   if(PRESETS.some(function(p){return p.name===name;})&&!confirm('範本「'+name+'」已存在，確定要覆蓋？'))return;
-  show('presetStatus','info','儲存中…');
-  google.script.run.withSuccessHandler(function(r){
-    if(!r||!r.ok){show('presetStatus','err',(r&&r.error)||'儲存失敗');return;}
-    PRESETS=r.presets||[];renderPresetList(name);show('presetStatus','ok','✅ 已儲存範本：'+name);
-  }).withFailureHandler(function(e){show('presetStatus','err',e.message);}).savePresetApi(name,basePayload());
+  var p=basePayload();
+  var data={
+    orgName:p.orgName,bankBank:p.bankBank,bankAcct:p.bankAcct,bankName:p.bankName,
+    themePrimary:p.themePrimary,themeGold:p.themeGold,themeBg:p.themeBg,cardRadius:p.cardRadius,
+    headerLayout:p.headerLayout,fontSize:p.fontSize,cardShadow:p.cardShadow,submitLabel:p.submitLabel,
+    labels:p.labels,registrationMode:p.registrationMode,paymentOptions:p.paymentOptions,
+    hasGroup:p.hasGroup,groupField:p.groupField,groupOptions:p.groupOptions,totalCapacity:p.totalCapacity,
+    items:p.items,customFields:p.customFields,notifyEnabled:p.notifyEnabled,
+    notifyAdminEmail:p.notifyAdminEmail,notifySendUser:p.notifySendUser
+  };
+  var record={name:name,data:data,updatedAt:new Date().toISOString()};
+  var json=JSON.stringify(record);
+  if(json.length>7000){show('presetStatus','err','範本內容過大，請減少品項或自訂欄位');return;}
+  var index=PRESETS.findIndex(function(x){return x.name===name;});
+  if(index<0&&PRESETS.length>=30){show('presetStatus','err','最多儲存 30 組範本');return;}
+  if(index>=0)PRESETS[index]=record;else PRESETS.unshift(record);
+  PRESETS.sort(function(a,b){return String(b.updatedAt||'').localeCompare(String(a.updatedAt||''));});
+  try{localStorage.setItem(LOCAL_PRESET_KEY,JSON.stringify(PRESETS));renderPresetList(name);show('presetStatus','ok','✅ 已儲存在這台瀏覽器：'+name);}
+  catch(e){show('presetStatus','err','瀏覽器無法儲存範本，請確認未封鎖網站儲存空間');}
 }
 function applyPreset(){
   if(SCHEMA_LOCKED){show('presetStatus','err','Notion DB 已建立，請重新整理頁面後再載入範本');return;}
@@ -647,19 +871,37 @@ function applyPreset(){
   document.getElementById('bankName').value=p.bankName||'';
   document.getElementById('registrationMode').value=p.registrationMode||'single';
   document.getElementById('hasGroup').checked=!!p.hasGroup;
-  document.getElementById('groupField').value=p.groupField||'所屬宮廟／單位';
+  document.getElementById('groupField').value=p.groupField||'所屬單位';
   document.getElementById('groupOptions').value=(p.groupOptions||[]).join('\n');
   document.getElementById('totalCapacity').value=p.totalCapacity||0;
   var primary=p.themePrimary||'#8B0000',gold=p.themeGold||'#C8922A';
+  var bg=p.themeBg||'#F5F0E8';
   document.getElementById('themePrimary').value=primary;document.getElementById('themePrimaryHex').value=primary;
   document.getElementById('themeGold').value=gold;document.getElementById('themeGoldHex').value=gold;
+  document.getElementById('themeBg').value=bg;document.getElementById('themeBgHex').value=bg;
+  document.getElementById('cardRadius').value=String(p.cardRadius||12);
+  document.getElementById('headerLayout').value=p.headerLayout||'centered';
+  document.getElementById('fontSize').value=String(p.fontSize||(p.fontScale==='large'?18:16));
+  document.getElementById('fontSizeValue').textContent=document.getElementById('fontSize').value+'px';
+  document.getElementById('cardShadow').value=p.cardShadow||'soft';
+  document.getElementById('submitLabel').value=p.submitLabel||'送出報名';
+  var labels=p.labels||{};
+  document.getElementById('labelPerson').value=labels.person||'報名人';
+  document.getElementById('labelContact').value=labels.contact||'聯絡人';
+  document.getElementById('labelItems').value=labels.items||'報名項目';
+  document.getElementById('labelPayment').value=labels.payment||'付款方式';
+  document.getElementById('labelNote').value=labels.note||'備註';
+  document.getElementById('labelTotal').value=labels.total||'總金額';
   document.querySelectorAll('#paymentOptions input').forEach(function(el){el.checked=(p.paymentOptions||[]).indexOf(el.value)>=0;});
   document.getElementById('items').innerHTML='';
   (p.items||[]).forEach(function(it){addItem(it.name,it.pricingMode==='minimum'?it.minAmount:it.price,it.unit,it.pricingMode,it.limit);});
   if(!(p.items||[]).length){addItem();addItem();}
   document.getElementById('customFields').innerHTML='';
   (p.customFields||[]).forEach(function(f){addCustomField(f.name,f.type,(f.options||[]).join('\n'),f.required,f.showWhenItem);});
-  toggleGroup();togglePaymentOptions();refreshCustomConditions();renderPreview();
+  document.getElementById('notifyEnabled').checked=!!p.notifyEnabled;
+  document.getElementById('notifyAdminEmail').value=p.notifyAdminEmail||'';
+  document.getElementById('notifySendUser').checked=(p.notifySendUser==null?true:!!p.notifySendUser);
+  toggleGroup();togglePaymentOptions();toggleNotify();refreshCustomConditions();renderPreview();
   updateWorkspaceState();
   show('presetStatus','ok','✅ 已載入範本：'+rec.name+'；請填本次活動名稱、代碼、日期與密碼。');
 }
@@ -667,10 +909,9 @@ function deletePreset(){
   var name=val('presetSelect');
   if(!name){show('presetStatus','err','請先選擇範本');return;}
   if(!confirm('確定刪除範本「'+name+'」？此操作無法復原。'))return;
-  google.script.run.withSuccessHandler(function(r){
-    if(!r||!r.ok){show('presetStatus','err',(r&&r.error)||'刪除失敗');return;}
-    PRESETS=r.presets||[];renderPresetList();document.getElementById('presetName').value='';show('presetStatus','ok','已刪除範本：'+name);
-  }).withFailureHandler(function(e){show('presetStatus','err',e.message);}).deletePresetApi(name);
+  PRESETS=PRESETS.filter(function(p){return p.name!==name;});
+  try{localStorage.setItem(LOCAL_PRESET_KEY,JSON.stringify(PRESETS));renderPresetList();document.getElementById('presetName').value='';show('presetStatus','ok','已刪除範本：'+name);}
+  catch(e){show('presetStatus','err','瀏覽器無法更新範本資料');}
 }
 
 function addCustomField(name, type, options, required, showWhenItem){
@@ -724,17 +965,26 @@ function basePayload(){
     registrationStart: val('registrationStart'), registrationEnd: val('registrationEnd'),
     eventPlace: val('eventPlace'), eventDesc: val('eventDesc'), remitDeadline: val('remitDeadline'),
     bankBank: val('bankBank'), bankAcct: val('bankAcct'), bankName: val('bankName'),
-    themePrimary: val('themePrimary'), themeGold: val('themeGold'),
+    themePrimary: val('themePrimary'), themeGold: val('themeGold'), themeBg: val('themeBg'),
+    cardRadius: parseInt(val('cardRadius'),10)||12,
+    headerLayout: val('headerLayout'), fontSize: parseInt(val('fontSize'),10)||16, cardShadow: val('cardShadow'), submitLabel: val('submitLabel'),
+    labels: {person:val('labelPerson'),contact:val('labelContact'),items:val('labelItems'),payment:val('labelPayment'),note:val('labelNote'),total:val('labelTotal')},
     paymentOptions: selectedPaymentOptions(),
     totalCapacity: Math.max(0, parseInt(val('totalCapacity'),10)||0),
     hasGroup: document.getElementById('hasGroup').checked,
     registrationMode: val('registrationMode'), customFields: readCustomFields(),
-    groupField: val('groupField'), groupOptions: groupOptions(), items: readItems()
+    groupField: val('groupField'), groupOptions: groupOptions(), items: readItems(),
+    notifyEnabled: document.getElementById('notifyEnabled').checked,
+    notifyAdminEmail: val('notifyAdminEmail'),
+    notifySendUser: document.getElementById('notifySendUser').checked
   };
 }
 
 function validatePayload(p){
-  if(!p.orgName) return '請填宮廟／主辦單位名稱';
+  if(!p.orgName) return '請填主辦單位名稱';
+  if(!p.submitLabel || p.submitLabel.length>20) return '送出按鈕文字需為 1～20 字';
+  var labelNames={person:'主要報名對象',contact:'代報聯絡人',items:'品項區塊',payment:'付款區塊',note:'備註欄位',total:'金額合計'};
+  for(var lk in labelNames){if(!p.labels[lk]||p.labels[lk].length>20)return labelNames[lk]+'需為 1～20 字';}
   if(!p.eventName) return '請填活動全名';
   if(!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(p.event)) return '活動代碼只能使用英文小寫、數字與單一連字號';
   if(p.reportPassword.length < 8) return '後台密碼至少需要 8 碼';
@@ -768,6 +1018,14 @@ function validatePayload(p){
     if(cf.type==='select' && !cf.options.length) return '下拉欄位至少需要一個選項：'+cf.name;
     customSeen[cf.name]=true;
   }
+  if(p.notifyEnabled){
+    if(!p.notifyAdminEmail) return '啟用報名通知信時，請填管理者收件 Email';
+    var emails=p.notifyAdminEmail.split(/[,，;；\s]+/).filter(Boolean);
+    if(!emails.length) return '啟用報名通知信時，請填管理者收件 Email';
+    for(var e=0;e<emails.length;e++){
+      if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emails[e])) return '管理者 Email 格式不正確：'+emails[e];
+    }
+  }
   return '';
 }
 
@@ -778,6 +1036,7 @@ function lockSchema(){
   document.querySelectorAll('#paymentOptions input').forEach(function(el){ el.disabled = true; });
   document.getElementById('groupField').disabled = true;
   document.getElementById('groupOptions').disabled = true;
+  document.getElementById('btnApplyTerminology').disabled = true;
   document.getElementById('btnAddItem').disabled = true;
   document.getElementById('btnAddCustom').disabled = true;
   document.getElementById('totalCapacity').disabled = true;
@@ -809,6 +1068,7 @@ function createDb(){
       document.getElementById('parentMode').disabled = true;
       document.getElementById('parentTargetId').disabled = true;
       document.getElementById('token').disabled = true;
+      document.getElementById('btnCheckNotion').disabled = true;
       document.getElementById('dbTag').textContent = 'DB 已建立 ✅';
       document.getElementById('btnGen').disabled = false;
       var lines=['✅ Notion DB 建立成功'];
@@ -817,11 +1077,12 @@ function createDb(){
       lines.push('報名 DB ID：'+r.dbId);
       if(r.url) lines.push('報名 DB：'+r.url);
       if(r.warning) lines.push('⚠️ '+r.warning);
+      if(r.usageLogWarning) lines.push('⚠️ 使用紀錄未寫入：'+r.usageLogWarning);
       show('dbStatus',r.warning?'info':'ok',lines.join('\n'));
       updateWorkspaceState();
     } else {
       btn.disabled=false;
-      show('dbStatus','err','❌ '+((r&&r.error)||'未知錯誤'));
+      show('dbStatus','err','❌ '+((r&&r.error)||'未知錯誤')+usageLogWarning(r));
     }
   }).withFailureHandler(function(e){
     btn.disabled=false; show('dbStatus','err','❌ '+e.message);
@@ -830,6 +1091,7 @@ function createDb(){
 
 function gen(){
   var p = basePayload();
+  p.token = val('token');
   p.dbId = DB_ID;
   p.dbSchemaKey = DB_SCHEMA_KEY;
   p.logo = LOGO_DATA;  // 只在產出時帶（不進 preset，避免範本超過 7000 字上限）
@@ -843,10 +1105,10 @@ function gen(){
     if(r && r.ok){
       downloadB64(r.zipB64, r.filename);
       DOWNLOAD_DONE = true;
-      show('genStatus','ok','✅ 已產出 '+r.filename+'（已觸發下載）\n📁 請到瀏覽器預設的「下載」資料夾查看；若有跳出另存視窗，則以你選擇的位置為準。\n\n'+r.checklist);
+      show('genStatus','ok','✅ 已產出 '+r.filename+'（已觸發下載）\n📁 請到瀏覽器預設的「下載」資料夾查看；若有跳出另存視窗，則以你選擇的位置為準。'+usageLogWarning(r)+'\n\n'+r.checklist);
       updateWorkspaceState();
     } else {
-      show('genStatus','err','❌ '+((r&&r.error)||'未知錯誤'));
+      show('genStatus','err','❌ '+((r&&r.error)||'未知錯誤')+usageLogWarning(r));
     }
   }).withFailureHandler(function(e){
     btn.disabled=false; show('genStatus','err','❌ '+e.message);

@@ -4,12 +4,13 @@
 <meta charset="UTF-8">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--red:{{THEME_PRIMARY}};--gold:{{THEME_GOLD}};--ink:#2C1A0E;--bg:#f5f0e8;--card:#fff;--line:#e5d9c0}
-body{font-family:'Microsoft JhengHei','Noto Sans TC',sans-serif;background:var(--bg);color:var(--ink);font-size:15px;padding:16px 12px}
+:root{--red:{{THEME_PRIMARY}};--gold:{{THEME_GOLD}};--ink:#2C1A0E;--bg:{{THEME_BG}};--card:#fff;--line:#e5d9c0;--radius:{{CARD_RADIUS}};--font-size:{{FONT_SIZE}}}
+body{font-family:'Microsoft JhengHei','Noto Sans TC',sans-serif;background:var(--bg);color:var(--ink);font-size:var(--font-size);padding:16px 12px}
+body input,body select,body button{font-size:var(--font-size)}body.shadow-none .stat,body.shadow-none .tblwrap,body.shadow-none .buy-sec{box-shadow:none}body.shadow-soft .stat,body.shadow-soft .tblwrap,body.shadow-soft .buy-sec{box-shadow:0 2px 10px rgba(0,0,0,.07)}body.shadow-strong .stat,body.shadow-strong .tblwrap,body.shadow-strong .buy-sec{box-shadow:0 10px 24px rgba(0,0,0,.14)}
 .wrap{max-width:1200px;margin:0 auto}
 h1{color:var(--red);font-size:20px;margin-bottom:12px}
 .stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
-.stat{flex:1;min-width:130px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.stat{flex:1;min-width:130px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px}
 .stat .k{font-size:12px;color:#8a7a60}
 .stat .v{font-size:22px;font-weight:800;color:var(--red)}
 .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
@@ -17,7 +18,7 @@ h1{color:var(--red);font-size:20px;margin-bottom:12px}
 button{cursor:pointer;font-family:inherit}
 .btn{background:var(--red);color:#fff;border:none;border-radius:8px;padding:9px 14px;font-size:14px}
 .btn.ghost{background:#fff;border:1px solid var(--gold);color:var(--red)}
-.tblwrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:10px}
+.tblwrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:var(--radius)}
 /* 分頁 */
 .tabs{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
 .tab{background:#fff;border:1px solid var(--line);color:#6a5a40;border-radius:8px 8px 0 0;padding:9px 16px;font-size:14px;font-weight:700}
@@ -82,6 +83,7 @@ select.st{padding:5px;border:1px solid var(--line);border-radius:6px;background:
 .receipt-note{font-size:12px;color:#746550;margin-top:18px}
 .receipt-stamps{display:flex;justify-content:space-between;gap:20px;margin-top:28px}
 .receipt-stamps div{flex:1;border-top:1px solid #7e715e;padding-top:5px;text-align:center;color:#746550}
+body .bar input,body .btn,body .tab,body table,body .buy-table,body #mask input,body #modal input,body #modal select{font-size:var(--font-size)}
 .receipt-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
 @media(max-width:620px){.receipt-meta{grid-template-columns:1fr}.receipt-paper{padding:20px 16px}.receipt-shell{padding:8px}}
 @media print{
@@ -95,7 +97,7 @@ select.st{padding:5px;border:1px solid var(--line);border-radius:6px;background:
 }
 </style>
 </head>
-<body>
+<body class="shadow-{{CARD_SHADOW}}">
 <div id="mask">
   <div class="box">
     <h2>🔒 後台登入</h2>
@@ -109,7 +111,7 @@ select.st{padding:5px;border:1px solid var(--line);border-radius:6px;background:
   <h1 id="rtitle"></h1>
   <div class="stats" id="stats"></div>
   <div class="bar">
-    <input type="text" id="q" placeholder="搜尋功德主／電話…" oninput="render()">
+    <input type="text" id="q" placeholder="搜尋報名人／電話…" oninput="render()">
     <button class="btn ghost" id="refreshBtn" onclick="load()">🔄 重新整理</button>
     <button class="btn" onclick="exportXlsx()">⬇ 匯出 Excel</button>
     <span id="lastSync" style="color:#8a7a5a;font-size:13px;margin-left:auto"></span>
@@ -147,6 +149,7 @@ select.st{padding:5px;border:1px solid var(--line);border-radius:6px;background:
 <script>
 {{CFG_INJECT}}
 
+var L = CFG.LABELS || {PERSON:'報名人',CONTACT:'聯絡人',ITEMS:'報名項目',PAYMENT:'付款方式',NOTE:'備註',TOTAL:'總金額'};
 var ROWS = [];
 var AUTH = '';
 var PAY_STATUS = CFG.PAY_STATUS || [];
@@ -170,7 +173,7 @@ function tryLogin(){
       AUTH = pw; $('pwInput').value = '';
       $('mask').style.display = 'none'; $('app').style.display = 'block';
       $('rtitle').textContent = CFG.REPORT_TITLE || (CFG.EVENT_NAME + ' 後台');
-      $('q').placeholder = IS_FAMILY ? '搜尋報名編號／家庭編號／聯絡人／功德主／電話…' : '搜尋報名編號／功德主／電話…';
+      $('q').placeholder = IS_FAMILY ? ('搜尋報名編號／家庭編號／'+L.CONTACT+'／'+L.PERSON+'／電話…') : ('搜尋報名編號／'+L.PERSON+'／電話…');
       load();
     } else { $('pwErr').textContent = '密碼錯誤'; }
   }).withFailureHandler(function(e){ $('pwErr').textContent = '驗證失敗：' + e.message; }).reportLoginApi(pw);
@@ -216,7 +219,7 @@ function renderStats(list){
     });
     paid = Object.keys(paidFamilies).length;
     confirmed = Object.keys(confirmedFamilies).length;
-    html += stat('有效家庭戶數', Object.keys(families).length) + stat('有效功德主筆數', active.length);
+    html += stat('有效團體／家庭數', Object.keys(families).length) + stat('有效'+L.PERSON+'數', active.length);
   } else {
     html += stat('有效報名筆數', active.length);
   }
@@ -228,7 +231,7 @@ function renderStats(list){
   html += stat('已取消筆數', cancelled) +
     stat(IS_FAMILY ? '已繳款家庭' : '已繳款', paid) +
     stat(IS_FAMILY ? '已確認匯款家庭' : '已確認匯款', confirmed) +
-    stat('總金額', 'NT$ ' + money(total));
+    stat(L.TOTAL, 'NT$ ' + money(total));
   $('stats').innerHTML = html;
 }
 
@@ -345,7 +348,13 @@ function cols(){
   if (CFG.GROUP_FIELD && CFG.GROUP_OPTIONS && CFG.GROUP_OPTIONS.length) c.push(CFG.GROUP_FIELD);
   c = c.concat(CUSTOM_FIELDS.map(function(f){return f.name;}));
   c = c.concat(ITEM_IDS, ['總金額','報名狀態','取消時間','繳款方式','匯款日期','帳號後五碼','匯款金額','繳費狀況','確認匯款?','稽核','個資同意','報名時間']);
+  if (CFG.NOTIFY_ON) c.push('Email');
   return c;
+}
+
+function labelFor(k){
+  var map={'功德主':L.PERSON,'聯絡人':L.CONTACT,'繳款方式':L.PAYMENT,'備註':L.NOTE,'總金額':L.TOTAL};
+  return map[k]||k;
 }
 
 function matchesRow(r,q){
@@ -383,7 +392,7 @@ function render(){
   renderBuy(list);   // 物品數量統計跟著目前篩選（搜尋）走，不是全部資料
 
   var C = cols();
-  $('thead').innerHTML = '<tr>' + C.map(function(c){ return '<th>'+escHtml(c)+'</th>'; }).join('') + '<th>操作</th></tr>';
+  $('thead').innerHTML = '<tr>' + C.map(function(c){ return '<th>'+escHtml(labelFor(c))+'</th>'; }).join('') + '<th>操作</th></tr>';
   if (!IS_FAMILY) {
     $('tbody').innerHTML = list.map(function(r){ return rowHtml(r,C,''); }).join('');
     return;
@@ -420,6 +429,7 @@ function cbCell(r,field){
 // ── 更新（GAS 直打 Notion PATCH）──
 var FAMILY_SHARED_FIELDS = ['聯絡人','電話','地址','繳款方式','匯款日期','帳號後五碼','匯款金額','備註',
   '繳費狀況','確認匯款?','稽核','個資同意'];
+if (CFG.NOTIFY_ON) FAMILY_SHARED_FIELDS.push('Email');
 if (CFG.GROUP_FIELD) FAMILY_SHARED_FIELDS.push(CFG.GROUP_FIELD);
 CUSTOM_FIELDS.forEach(function(f){ FAMILY_SHARED_FIELDS.push(f.name); });
 
@@ -445,16 +455,18 @@ function patch(pageId, fields){
 
 // ── 編輯 Modal ──
 var EDIT_ID = '';
+var EDIT_REGID = '';
 function openModal(pageId){
   EDIT_ID = pageId;
   var r = ROWS.filter(function(x){ return x.pageId === pageId; })[0]; if (!r) return;
+  EDIT_REGID = r['報名編號'] || '';
   if(!isActive(r)){alert('此筆報名已取消，僅供查詢。');return;}
   var h = '';
   if (IS_FAMILY) {
     h += '<div class="hint">家庭編號：'+escHtml(r['家庭編號']||'')+'</div>';
-    h += fld('聯絡人', r['聯絡人']||'') + fld('功德主', r['功德主']);
+    h += fld('聯絡人', r['聯絡人']||'', L.CONTACT) + fld('功德主', r['功德主'], L.PERSON);
   } else {
-    h += fld('功德主', r['功德主']);
+    h += fld('功德主', r['功德主'], L.PERSON);
   }
   h += fld('電話', r['電話']) + fld('地址', r['地址']||'');
   if (CFG.GROUP_FIELD && CFG.GROUP_OPTIONS && CFG.GROUP_OPTIONS.length) h += sel(CFG.GROUP_FIELD, CFG.GROUP_OPTIONS, r[CFG.GROUP_FIELD]);
@@ -465,18 +477,38 @@ function openModal(pageId){
     else h += fld(f.name, r[f.name]||'');
   });
   ITEM_IDS.forEach(function(id){ var it=(CFG.QTY_ITEMS||[]).filter(function(x){return x.id===id;})[0]; h += fldNum(id+(it&&(it.pricingMode==='donation'||it.pricingMode==='minimum')?'（金額）':''), r[id], id); });
-  h += sel('繳款方式', PAY_OPTIONS, r['繳款方式']);
+  h += sel('繳款方式', PAY_OPTIONS, r['繳款方式'], L.PAYMENT);
   h += '<div class="mrow"><div>'+fld('匯款日期', r['匯款日期']||'')+'</div><div>'+fld('帳號後五碼', r['帳號後五碼']||'')+'</div></div>';
   h += fldNum('匯款金額', r['匯款金額']);
-  h += fld('備註', r['備註']||'');
+  h += fld('備註', r['備註']||'', L.NOTE);
+  if (CFG.NOTIFY_ON) {
+    h += fld('Email', r['Email']||'');
+    h += '<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)">'
+       + '<label>報名確認信</label>'
+       + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+       + '<button type="button" class="btn ghost" onclick="resendMail(\'user\')">寄給報名人</button>'
+       + '<button type="button" class="btn ghost" onclick="resendMail(\'admin\')">寄給管理者</button>'
+       + '<button type="button" class="btn ghost" onclick="resendMail(\'both\')">兩者都寄</button>'
+       + '</div><div id="resendMsg" style="margin-top:6px;font-size:13px;color:#8a7a5a"></div>'
+       + '<div class="hint">寄給報名人需此筆已填 Email；如剛在上方改了 Email，請先按「儲存」再重寄。</div></div>';
+  }
   $('mBody').innerHTML = h;
   $('modal').classList.add('show');
 }
-function fld(k,v){ return '<label>'+escHtml(k)+'</label><input data-k="'+escHtml(k)+'" value="'+escHtml(v)+'">'; }
+function resendMail(target){
+  if (!EDIT_REGID){ alert('此筆沒有報名編號，無法重寄'); return; }
+  var box = $('resendMsg'); if (box) box.textContent = '寄送中…';
+  google.script.run.withSuccessHandler(function(r){
+    if (!r || !r.ok){ if(box) box.textContent = '寄送失敗：'+((r&&r.error)||'未知錯誤'); return; }
+    var parts=[]; if(r.sentUser)parts.push('報名人'); if(r.sentAdmin)parts.push('管理者');
+    if(box) box.textContent = '✅ 已寄送給 '+(parts.join('、')||'—');
+  }).withFailureHandler(function(e){ if(box) box.textContent='寄送失敗：'+e.message; }).reportResendMailApi(AUTH, EDIT_REGID, target);
+}
+function fld(k,v,label){ return '<label>'+escHtml(label||k)+'</label><input data-k="'+escHtml(k)+'" value="'+escHtml(v)+'">'; }
 function fldNum(k,v,dataKey){ return '<label>'+escHtml(k)+'</label><input data-k="'+escHtml(dataKey||k)+'" data-num="1" inputmode="numeric" value="'+escHtml(v!=null?v:0)+'">'; }
 function fldCheck(k,v){ return '<label class="agree"><input type="checkbox" data-k="'+escHtml(k)+'" data-bool="1"'+(v?' checked':'')+'> '+escHtml(k)+'</label>'; }
 function fldDate(k,v){ return '<label>'+escHtml(k)+'</label><input type="date" data-k="'+escHtml(k)+'" value="'+escHtml(String(v||'').slice(0,10))+'">'; }
-function sel(k,opts,cur){ return '<label>'+escHtml(k)+'</label><select data-k="'+escHtml(k)+'">'+ '<option value=""></option>' + opts.map(function(o){ return '<option'+(cur===o?' selected':'')+'>'+escHtml(o)+'</option>'; }).join('') + '</select>'; }
+function sel(k,opts,cur,label){ return '<label>'+escHtml(label||k)+'</label><select data-k="'+escHtml(k)+'">'+ '<option value=""></option>' + opts.map(function(o){ return '<option'+(cur===o?' selected':'')+'>'+escHtml(o)+'</option>'; }).join('') + '</select>'; }
 function closeModal(){ $('modal').classList.remove('show'); }
 
 // ── 收據預覽／列印；家庭模式會自動合併同一家庭編號的全部功德主 ──
@@ -520,13 +552,13 @@ function openReceipt(pageId){
     '<div class="receipt-head"><div class="org">'+escHtml(CFG.ORG_NAME||'')+'</div><div class="title">報名收據</div></div>'+
     '<div class="receipt-meta">'+
       '<div>收據編號：'+escHtml(receiptNo)+'</div><div>開立日期：'+escHtml(todayText())+'</div>'+
-      '<div>'+(IS_FAMILY?'聯絡人':'功德主')+'：'+escHtml(name||'')+'</div><div>電話：'+escHtml(first['電話']||'')+'</div>'+
+      '<div>'+escHtml(IS_FAMILY?L.CONTACT:L.PERSON)+'：'+escHtml(name||'')+'</div><div>電話：'+escHtml(first['電話']||'')+'</div>'+
       '<div>活動：'+escHtml(CFG.EVENT_NAME||'')+'</div><div>報名日期：'+escHtml(registrationDate||'—')+'</div>'+
-      '<div>繳款方式：'+escHtml(first['繳款方式']||'—')+'</div><div>繳款狀況：'+escHtml(status)+'</div>'+
+      '<div>'+escHtml(L.PAYMENT)+'：'+escHtml(first['繳款方式']||'—')+'</div><div>繳款狀況：'+escHtml(status)+'</div>'+
     '</div>'+
-    '<table class="receipt-table"><thead><tr><th>功德主</th><th>品項</th><th>數量／內容</th><th>金額</th></tr></thead><tbody>'+receiptItemLines(rows)+'</tbody></table>'+
+    '<table class="receipt-table"><thead><tr><th>'+escHtml(L.PERSON)+'</th><th>'+escHtml(L.ITEMS)+'</th><th>數量／內容</th><th>金額</th></tr></thead><tbody>'+receiptItemLines(rows)+'</tbody></table>'+
     '<div class="receipt-total">合計：NT$ '+money(total)+'</div>'+
-    '<div class="receipt-note">備註：'+escHtml(first['備註']||'')+'<br>本收據依後台目前報名資料產生，如有更正請以主辦單位留存資料為準。</div>'+
+    '<div class="receipt-note">'+escHtml(L.NOTE)+'：'+escHtml(first['備註']||'')+'<br>本收據依後台目前報名資料產生，如有更正請以主辦單位留存資料為準。</div>'+
     '<div class="receipt-stamps"><div>經手人</div><div>主辦單位章</div></div>';
   $('receiptModal').classList.add('show');
 }

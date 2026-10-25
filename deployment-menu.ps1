@@ -12,20 +12,34 @@ if (-not (Test-Path -LiteralPath $accountHelper)) {
   exit 1
 }
 . $accountHelper
+$script:SelectedDeployAccount = $null
 
 function Wait-ForUser {
   Write-Host ''
   Read-Host '按 Enter 返回選單' | Out-Null
 }
 
-function Show-Account {
+function Show-Account([switch]$AllowManualEntry, [switch]$SkipProfileProbe) {
   Write-Host '目前登入帳號：' -ForegroundColor Cyan
-  $email = Get-ClaspAccountEmail
+  $email = Get-ClaspAccountEmail -SkipProfileProbe:$SkipProfileProbe
   if (-not $email) {
-    Write-Host '目前沒有可用的 Google 登入憑證。' -ForegroundColor Yellow
-    return $false
+    if (-not (Test-ClaspAuthorized -UseCachedResult)) {
+      Write-Host '目前沒有可用的 Google 登入憑證，或憑證已要求重新驗證。' -ForegroundColor Yellow
+      return $false
+    }
+    Write-Host 'clasp 已登入，但 Google 沒有回傳帳號 Email。' -ForegroundColor Yellow
+    if (-not $AllowManualEntry) {
+      Write-Host '請選「更換 Google 帳號」重新驗證。' -ForegroundColor Yellow
+      return $false
+    }
+    $email = (Read-Host '請輸入剛才登入的完整 Google Email').Trim().ToLowerInvariant()
+    if (-not (Test-GoogleAccountEmail $email)) {
+      Write-Host 'Email 格式不正確，已停止，尚未進行部署。' -ForegroundColor Red
+      return $false
+    }
   }
   Use-DeploymentAccountProfile $email | Out-Null
+  $script:SelectedDeployAccount = $email
   Write-Host $email -ForegroundColor Green
   $profiles = Get-DeploymentAccountProfiles
   if ($profiles.Count -gt 0) {
@@ -50,7 +64,7 @@ function Ensure-Account {
   }
 
   Write-Host ''
-  return (Show-Account)
+  return (Show-Account -AllowManualEntry -SkipProfileProbe)
 }
 
 function Start-Deploy {
@@ -58,7 +72,12 @@ function Start-Deploy {
   Write-Host '開始執行部署，請依畫面提示操作。' -ForegroundColor Cyan
   Write-Host ''
 
-  & pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'deploy.ps1')
+  $deployScript = Join-Path $PSScriptRoot 'deploy.ps1'
+  if ($script:SelectedDeployAccount) {
+    & pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File $deployScript -AccountEmail $script:SelectedDeployAccount
+  } else {
+    & pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File $deployScript
+  }
   $deployExit = $LASTEXITCODE
 
   Write-Host ''
@@ -77,9 +96,9 @@ function Change-AccountAndDeploy {
   Write-Host '               更換 Google 帳號'
   Write-Host '=================================================='
   Write-Host ''
-  $currentEmail = Get-ClaspAccountEmail
+  $currentEmail = Get-ActiveDeploymentAccount
+  if (-not $currentEmail) { $currentEmail = Get-ClaspAccountEmail }
   if ($currentEmail) {
-    Use-DeploymentAccountProfile $currentEmail | Out-Null
     Save-DeploymentAccountProfile $currentEmail
     Write-Host "目前 $currentEmail 的 Script ID、部署 ID 與網址已保存。" -ForegroundColor DarkGray
   }
@@ -98,7 +117,7 @@ function Change-AccountAndDeploy {
   }
 
   Write-Host ''
-  if (-not (Ensure-Account)) {
+  if (-not (Show-Account -AllowManualEntry -SkipProfileProbe)) {
     Wait-ForUser
     return
   }
@@ -119,7 +138,7 @@ if (-not (Get-Command clasp -ErrorAction SilentlyContinue)) {
 }
 
 if ($Validate) {
-  $requiredFunctions = @('Get-ClaspAccountEmail', 'Use-DeploymentAccountProfile', 'Save-DeploymentAccountProfile')
+  $requiredFunctions = @('Get-ClaspAccountEmail', 'Test-ClaspAuthorized', 'Test-GoogleAccountEmail', 'Use-DeploymentAccountProfile', 'Save-DeploymentAccountProfile')
   foreach ($name in $requiredFunctions) {
     if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
       Write-Host "部署選單環境檢查失敗：缺少 $name" -ForegroundColor Red
@@ -133,7 +152,7 @@ if ($Validate) {
 while ($true) {
   Clear-Host
   Write-Host '=================================================='
-  Write-Host '            宮廟報名表產生器（Notion 版）'
+  Write-Host '            通用活動報名表產生器（Notion 版）'
   Write-Host '=================================================='
   Write-Host ''
   $activeAccount = Get-ActiveDeploymentAccount
