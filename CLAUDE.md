@@ -6,9 +6,11 @@
 > **本產生器是 Notion 版（唯一版本）。** 產出的活動專案由 **GAS 直打 Notion API**（`UrlFetchApp`），新增／查詢／更新全在 GAS 伺服器端，**不再經 n8n**（2026-08-04 改版）。
 > Sheets 後端已於 2026-07-23 整包移除；若需 Sheets 版，另見獨立專案 `_報名表產生器_Sheets版\`。
 
-## 目前進度（最後更新：2026-09-20）
+## 目前進度（最後更新：2026-10-25）
 
-- **狀態**：2026-09-20 實查 `andesnice@gmail.com` 正式部署為 `AKfycbx9…` **@6**；修改前 16 個可部署檔與 @6 逐檔雜湊完全相同。這輪新增「產生器使用紀錄寫入 Notion2」程式與測試，**尚未 push／未 redeploy，正式版仍是 @6、尚未包含使用紀錄**。
+- **狀態**：本輪通用化規範＋UI 工作台＋公開版＋Notion2 使用紀錄／意見回饋／報名通知信，**已 commit（`d95cc55`）並 push 到 github 分支 `agent/registration-safety-ui-workflow`**；本機回歸測試（`notion-template-safety.tests.cjs`、`tests/deployment-profile.tests.ps1`）皆過。🔴 **GAS 仍是舊版 @6、尚未 redeploy**：clasp 登入憑證過期（`clasp list-deployments` 回 `invalid_grant/invalid_rapt`），要先 `clasp login`（用擁有者 `andesnice@gmail.com`）才能 push／redeploy。`generator-local-smoke.tests.cjs` 需本機 GAS 模擬器（port 3100）在跑，本輪未實跑（只做靜態審查＋安全測試）。
+- **下一步（接手就從這裡開始）**：1. 終端機跑 `clasp login` 重新授權（擁有者帳號）。2. 雙擊 `部署選單.bat` 選 1 一鍵 push＋redeploy（網址不變），或手動 `clasp push -f`→`create-version`→`redeploy AKfycbx9UMfie4J0KNXudOD0yyEjmdkVT8c7T1MsYs0D--EVc0mjW2sP9P3ZzaApy11cPhmK2Q --versionNumber N`。3. 填 Script Properties `REG_FORM_USAGE_LOG_NOTION_TOKEN`／`REG_FORM_USAGE_LOG_DATABASE_ID`（Notion2 使用紀錄），執行 `checkUsageLog`／`testUsageLogWrite` 驗證。4. 開 `/exec` 與 `?page=feedback` 實跑一次端到端。
+- **狀態（2026-09-20 舊紀錄）**：實查 `andesnice@gmail.com` 正式部署為 `AKfycbx9…` **@6**；修改前 16 個可部署檔與 @6 逐檔雜湊完全相同。新增「產生器使用紀錄寫入 Notion2」程式與測試。
 - **2026-09-20 Notion2 使用紀錄（本機完成、外部設定未完成）**：`createDbApi` 與 `generateApi` 現在不論成功／失敗都嘗試寫入獨立的「報名表產生器使用紀錄」DB；記錄時間、使用者 Email、主辦單位、活動、動作、結果、版本與錯誤摘要，不保存 Token／後台密碼／ZIP。紀錄寫入失敗不阻擋主要操作，前端會顯示警告。憑證固定讀 Script Properties `REG_FORM_USAGE_LOG_NOTION_TOKEN`／`REG_FORM_USAGE_LOG_DATABASE_ID`，不沿用操作人輸入的活動 Token。回歸測試已覆蓋成功、失敗、機密不外洩及記錄失敗不影響主要結果。建表規格與設定見 `Notion2使用紀錄設定.md`。
 - **目前卡點**：Codex 可用的 Notion 連線實際登入「玄門真宗」工作區，不是 Notion2／MyLife；讀取 MyLife 專案 data source `collection://3078db83-bd93-8069-ac23-000b7552909b` 回傳 404，因此未建立 DB、未填 Script Properties、未做真實寫入。必須先把 Notion 連線切到 Notion2，避免誤建到玄門工作區。
 - **2026-08-28 新產出專案授權修正（靜態完成、未 push／未 redeploy）**：實際產出的「claude 開源社團」後台讀取 Notion 時出現 `UrlFetchApp.fetch` 缺少 `script.external_request` 權限。根因已確認為新 GAS 專案部署後，部署擁有者未在編輯器手動授權；Web App 不會可靠地自行跳授權視窗。`tmpl_Code.html` 已新增公開 `authorizeApp()`（唯讀 GET `/users/me`，並觸發 MailApp scope）及友善錯誤；產出的 `deploy.ps1`／`網址清單.txt` 已列 Apps Script 編輯器網址與「選 authorizeApp → 執行 → 允許」步驟；`Code.gs` 產出清單同步更正；回歸測試已覆蓋授權成功與缺權限訊息。現有已產出的專案仍須人工進 GAS 編輯器執行一次授權，重新產出前不會自動取得此函式。
