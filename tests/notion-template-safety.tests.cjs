@@ -744,6 +744,10 @@ const generatedConfig = generatedFiles.find((f) => f.name === 'Config.gs').conte
 const generatedServerCode = generatedFiles.find((f) => f.name === 'Code.gs').content;
 const generatedClose = generatedFiles.find((f) => f.name === 'close.html').content;
 const themedGeneratedIndex = generatedFiles.find((f) => f.name === 'index.html').content;
+const templePhotoData = fs.readFileSync(path.join(root, 'hero_image.html'), 'utf8').trim();
+assert.ok(templePhotoData.startsWith('data:image/jpeg;base64,'), 'temple cover must be an embedded JPEG');
+assert.deepEqual(Buffer.from(templePhotoData.split(',')[1], 'base64'), fs.readFileSync(path.join(root, 'login-temple.jpg')));
+assert.ok(themedGeneratedIndex.includes('src="' + templePhotoData + '"'), 'generated index should use the supplied temple cover');
 const themedGeneratedLookup = generatedFiles.find((f) => f.name === 'lookup.html').content;
 const themedGeneratedReport = generatedFiles.find((f) => f.name === 'report.html').content;
 for (const themedPage of [themedGeneratedIndex, themedGeneratedLookup, themedGeneratedReport, generatedClose]) {
@@ -753,6 +757,11 @@ for (const themedPage of [themedGeneratedIndex, themedGeneratedLookup, themedGen
   assert.doesNotMatch(themedPage, /\{\{(?:THEME_BG|CARD_RADIUS|FONT_SIZE)\}\}/);
 }
 assert.match(themedGeneratedIndex, /class="layout-poster shadow-strong"/);
+assert.match(themedGeneratedIndex, /class="page-layout"[\s\S]*<aside class="side">[\s\S]*class="hero-visual"[\s\S]*id="descCard"[\s\S]*<main class="wrap" id="formFlow">/);
+assert.match(themedGeneratedIndex, /id="stepBasic"[\s\S]*id="stepPlan"[\s\S]*id="stepPay"/);
+assert.match(themedGeneratedIndex, /id="confirmOverlay"[\s\S]*請先截圖保留本確認畫面[\s\S]*確認無誤，送出報名/);
+assert.match(themedGeneratedIndex, /\$\('confirmSend'\)\.onclick = function\(\)[\s\S]*\.submitApi\(payload\)/);
+assert.match(uiSource, /class="pv-layout"[\s\S]*class="pv-side"[\s\S]*class="pv-form"/);
 assert.match(themedGeneratedIndex, /id="btnSubmit">立即完成登記</);
 assert.match(themedGeneratedIndex, /<label>學員 <span class="req">/);
 assert.match(themedGeneratedIndex, /<h2 id="itemsTitle">課程方案<\/h2>/);

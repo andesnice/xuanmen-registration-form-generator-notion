@@ -40,6 +40,7 @@ function doGet(e) {
   var isFeedback = page === 'feedback';
   var template = HtmlService.createTemplateFromFile(isFeedback ? 'feedback' : 'ui');
   template.APP_URL = ScriptApp.getService().getUrl() || '';
+  if (!isFeedback) template.HERO_IMAGE_DATA = HtmlService.createHtmlOutputFromFile('hero_image').getContent().trim();
   return template.evaluate()
     .setTitle(isFeedback ? '意見回饋｜通用活動報名表產生器' : '通用活動報名表產生器')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
@@ -890,6 +891,7 @@ function buildFiles_(cfg) {
     TOTAL_LABEL_HTML: html_(cfg.LABELS.TOTAL),
     EVENT_NAME_HTML: html_(cfg.EVENT_NAME),
     CLOSED_MSG_HTML: closedHtml_(cfg.CLOSED_MSG),
+    DEFAULT_HERO_IMAGE: tpl_('hero_image').trim(),
     // LOGO：base64 data URL（無 < > & " '），可直接嵌 HTML 屬性；空則 close 頁退回 🏮
     LOGO_JS: JSON.stringify(cfg.LOGO || ''),
     LOGO_TAG: cfg.LOGO ? ('<img src="' + cfg.LOGO + '" alt="" class="lampimg">') : '🏮'

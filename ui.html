@@ -9,8 +9,10 @@
 html{scroll-behavior:smooth}
 body{font-family:'Microsoft JhengHei','Noto Sans TC',sans-serif;background:radial-gradient(circle at 8% 0,rgba(200,146,42,.13),transparent 28%),var(--bg);color:var(--ink);font-size:16px;line-height:1.6;padding:26px 16px 48px}
 .wrap{max-width:1180px;margin:0 auto}
-.hero{position:relative;overflow:hidden;background:linear-gradient(135deg,#fff 0%,#fff9ed 100%);border:1px solid var(--line);border-radius:20px;padding:28px 30px 22px;margin-bottom:18px;box-shadow:var(--shadow)}
-.hero::after{content:'🏮';position:absolute;right:24px;top:2px;font-size:92px;opacity:.08;transform:rotate(8deg);pointer-events:none}
+.hero{display:grid;grid-template-columns:minmax(250px,34%) minmax(0,1fr);min-height:430px;overflow:hidden;background:linear-gradient(135deg,#fff 0%,#fff9ed 100%);border:1px solid var(--line);border-radius:20px;margin-bottom:18px;box-shadow:var(--shadow)}
+.hero-art{position:relative;min-height:430px;background:#19313b;overflow:hidden}
+.hero-art img{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover;object-position:center 68%}
+.hero-content{min-width:0;display:flex;flex-direction:column;justify-content:center;padding:28px 30px 24px}
 .eyebrow{display:inline-flex;align-items:center;gap:6px;color:var(--red);background:#f9ece8;border:1px solid #ebcbc4;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:800;letter-spacing:.08em;margin-bottom:8px}
 h1{color:var(--red);font-size:clamp(24px,4vw,34px);line-height:1.25;margin-bottom:7px}
 .sub{color:var(--muted);font-size:15px;max-width:780px}
@@ -109,11 +111,14 @@ button.ghost{background:#fff;border:1px solid var(--gold);color:var(--red);borde
 code{background:#f3ece0;padding:1px 5px;border-radius:4px;font-size:13px}
 .pv{--pp:#8B0000;--pg:#C8922A;--pfs:13px;background:#f5f0e8;border:1px solid #e5d9c0;border-radius:12px;padding:16px;max-width:360px;margin:0 auto;font-size:var(--pfs);line-height:1.5}
 .pv-stage{overflow:auto;padding:2px}.pv.desktop{width:680px;max-width:none}.pv.phone{width:360px;max-width:100%}
-.pv-head{text-align:center;margin-bottom:10px;border-radius:inherit;padding:4px}.pv.layout-banner .pv-head{display:grid;grid-template-columns:72px 1fr;column-gap:10px;align-items:center;text-align:left}.pv.layout-banner .pv-lamp{grid-row:1/4}.pv.layout-banner .pv-title,.pv.layout-banner .pv-meta{text-align:left}.pv.layout-poster .pv-head{background:var(--pp);padding:14px}.pv.layout-poster .pv-title{color:#fff}.pv.layout-poster .pv-meta,.pv.layout-poster .pv-desc{color:#fff!important}.pv.shadow-none .pv-box{box-shadow:none}.pv.shadow-soft .pv-box{box-shadow:0 2px 10px rgba(0,0,0,.07)}.pv.shadow-strong .pv-box{box-shadow:0 10px 24px rgba(0,0,0,.14)}
-.pv-lamp{text-align:center;font-size:30px;line-height:1}
-.pv-lamp img{display:block;margin:0 auto;max-width:100%;max-height:140px;object-fit:contain;border-radius:6px}
-.pv-title{text-align:center;color:var(--pp);font-weight:800;font-size:calc(var(--pfs) + 3px);margin-top:4px}
-.pv-meta{text-align:center;color:#8a7a60;font-size:calc(var(--pfs) - 2px);margin-bottom:12px;min-height:14px}
+.pv-layout{display:block}.pv.desktop .pv-layout{display:grid;grid-template-columns:245px minmax(0,1fr);gap:14px}.pv-side,.pv-form{min-width:0}
+.pv-visual{aspect-ratio:2/3;background:linear-gradient(155deg,var(--pp),var(--pg));border-radius:8px 8px 0 0;display:grid;place-items:center;padding:12px}
+.pv-head{text-align:center;background:#fff;border:1px solid #e5d9c0;border-top:0;border-radius:0 0 8px 8px;padding:10px;margin-bottom:8px}.pv.layout-banner .pv-head{border-left:4px solid var(--pg);text-align:left}.pv.layout-banner .pv-title,.pv.layout-banner .pv-meta{text-align:left}.pv.layout-poster .pv-head{background:var(--pp)}.pv.layout-poster .pv-title,.pv.layout-poster .pv-meta{color:#fff!important}.pv.shadow-none .pv-box{box-shadow:none}.pv.shadow-soft .pv-box{box-shadow:0 2px 10px rgba(0,0,0,.07)}.pv.shadow-strong .pv-box{box-shadow:0 10px 24px rgba(0,0,0,.14)}
+.pv-lamp{text-align:center;font-size:64px;line-height:1;display:grid;place-items:center;width:100%;height:100%}
+.pv-lamp img{display:block;width:100%;height:100%;object-fit:cover}.pv-lamp.custom img{object-fit:contain;padding:12px}
+.pv-title{color:var(--pp);font-weight:800;font-size:calc(var(--pfs) + 3px);margin-top:4px}
+.pv-meta{color:#8a7a60;font-size:calc(var(--pfs) - 2px);margin-bottom:5px;min-height:14px}
+.pv-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin-bottom:8px}.pv-steps span{font-size:10px;font-weight:700;color:var(--pp);background:#fff;border:1px solid #e5d9c0;border-radius:6px;padding:6px 2px;text-align:center}
 .pv-box{background:#fff;border:1px solid #e5d9c0;border-radius:8px;padding:10px 12px;margin-bottom:8px}
 .pv-h{color:var(--pp);border-left:3px solid var(--pg);padding-left:7px;font-weight:700;margin-bottom:6px;font-size:var(--pfs)}
 .pv-item{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px dashed #ece3cf}
@@ -127,7 +132,7 @@ code{background:#f3ece0;padding:1px 5px;border-radius:4px;font-size:13px}
 .pv-btn{background:var(--pp);color:#fff;text-align:center;border-radius:8px;padding:10px;font-weight:700;font-size:calc(var(--pfs) + 1px)}
 .pv-empty{color:#b0a289;text-align:center;padding:6px 0;font-size:12px}
 @media(max-width:940px){.workspace{grid-template-columns:1fr}.sidecol{position:static;display:grid;grid-template-columns:1fr 1fr;gap:16px}.sidecol .card{margin:0}.pv{max-width:100%}}
-@media(max-width:680px){body{padding:12px 10px 32px}.hero{padding:22px 18px 17px;border-radius:16px}.hero::after{font-size:68px;right:8px}.flowbar{grid-template-columns:1fr 1fr}.workspace{gap:14px}.sidecol{display:block}.sidecol .card{margin-bottom:14px}.card{padding:18px 15px;border-radius:14px}.presetbar{grid-template-columns:1fr}.row>div{flex-basis:100%}.btnbar button{flex:1}.payopts{display:grid;grid-template-columns:1fr 1fr}.flowstep{padding:8px}.flowstep .stepnum{flex-basis:25px;height:25px}.table-scroll{margin-left:-15px;margin-right:-15px;padding-left:15px;padding-right:15px}.inline-action{align-items:stretch}}
+@media(max-width:680px){body{padding:12px 10px 32px}.hero{display:flex;flex-direction:column;border-radius:16px;min-height:0}.hero-art{min-height:0;height:320px}.hero-content{padding:22px 18px 18px}.flowbar{grid-template-columns:1fr 1fr}.workspace{gap:14px}.sidecol{display:block}.sidecol .card{margin-bottom:14px}.card{padding:18px 15px;border-radius:14px}.presetbar{grid-template-columns:1fr}.row>div{flex-basis:100%}.btnbar button{flex:1}.payopts{display:grid;grid-template-columns:1fr 1fr}.flowstep{padding:8px}.flowstep .stepnum{flex-basis:25px;height:25px}.table-scroll{margin-left:-15px;margin-right:-15px;padding-left:15px;padding-right:15px}.inline-action{align-items:stretch}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{transition:none!important}}
 /* 建議／意見回饋彈窗（送出寫入「宮廟客戶意見DB」，後端共用 submitFeedbackApi） */
 button.hero-link{font:inherit;cursor:pointer}
@@ -148,6 +153,8 @@ button.hero-link{font:inherit;cursor:pointer}
 <body>
 <div class="wrap">
   <header class="hero">
+    <div class="hero-art"><img src="<?!= HERO_IMAGE_DATA ?>" alt="晨光山巒中的宮廟"></div>
+    <div class="hero-content">
     <div class="eyebrow">活動報名・私人工作台</div>
     <h1>通用活動報名表產生器</h1>
     <p class="sub">依序完成活動設定、Notion 資料庫與專案下載，即可取得獨立可部署的 GAS 報名表＋後台。</p>
@@ -158,6 +165,7 @@ button.hero-link{font:inherit;cursor:pointer}
       <a class="flowstep" id="flowDb" href="#notionCard"><span class="stepnum">3</span><span>建立資料庫</span></a>
       <a class="flowstep" id="flowZip" href="#generateCard"><span class="stepnum">4</span><span>下載專案</span></a>
     </nav>
+    </div>
   </header>
 
   <div class="workspace">
@@ -211,7 +219,7 @@ button.hero-link{font:inherit;cursor:pointer}
       <div class="hint" id="eventDescHelp">支援換行，最多 1000 字。<span id="eventDescCount">0 / 1000</span></div>
     </div>
     <div style="margin-top:10px">
-      <label for="logoFile">活動 Logo 圖片（可留空；留空用預設 🏮 燈籠）</label>
+      <label for="logoFile">活動主圖／Logo（留空使用預設宮廟封面）</label>
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <input type="file" id="logoFile" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" onchange="onLogoPick(this)">
         <span id="logoPreview" style="display:none;align-items:center;gap:8px">
@@ -219,7 +227,7 @@ button.hero-link{font:inherit;cursor:pointer}
           <button type="button" class="del" onclick="clearLogo()">移除</button>
         </span>
       </div>
-      <div class="hint">會顯示在報名表與結束頁最上方，取代 🏮。上限 5MB；圖片會內嵌進 Config.gs（不上傳 Notion），檔案越大報名表載入越慢，建議壓到 ≤300KB 或改用 SVG。</div>
+      <div class="hint">報名表桌機顯示在左側，手機顯示在表單上方；結束頁沿用原頁首。上限 5MB；圖片會內嵌進 Config.gs（不上傳 Notion），建議壓到 ≤300KB 或改用 SVG。</div>
     </div>
     <label class="chk"><input type="checkbox" id="hasGroup" checked onchange="toggleGroup()"> 報名表要有「所屬單位／分會／團體」欄</label>
     <div id="groupConfig">
@@ -339,7 +347,7 @@ button.hero-link{font:inherit;cursor:pointer}
     </div>
     <div class="hint">產出的報名表、查詢頁、後台與截止頁會套用同一組風格；仍可個別微調顏色。</div>
     <div class="row" style="margin-top:10px">
-      <div><label for="headerLayout">頁首版型</label><select id="headerLayout" onchange="renderPreview()"><option value="centered">經典置中</option><option value="banner">橫幅式</option><option value="poster">海報式</option></select></div>
+      <div><label for="headerLayout">主視覺文字樣式</label><select id="headerLayout" onchange="renderPreview()"><option value="centered">置中</option><option value="banner">左對齊</option><option value="poster">主題色底</option></select></div>
       <div><label for="fontSize">文字大小：<strong id="fontSizeValue">16px</strong></label><input type="range" id="fontSize" min="14" max="22" step="1" value="16" oninput="syncFontSize()"><div class="hint">14px 精簡、16px 標準、18px 以上適合長輩閱讀。</div></div>
     </div>
     <div class="row" style="margin-top:10px">
@@ -435,12 +443,13 @@ button.hero-link{font:inherit;cursor:pointer}
     <section class="card" id="previewCard">
       <h2>即時預覽</h2>
       <div class="btnbar" style="margin-bottom:10px"><button class="ghost" type="button" onclick="setPreviewDevice('phone')">手機</button><button class="ghost" type="button" onclick="setPreviewDevice('desktop')">桌面</button></div>
-      <div class="hint" style="margin-bottom:10px">標題、版型、字級、主題色、Logo 與品項會同步更新。</div>
+      <div class="hint" style="margin-bottom:10px">桌機左側顯示主圖與宣傳、右側顯示填單；手機上下排列。標題、色彩、圖片與品項會同步更新。</div>
       <div class="pv-stage"><div id="pv" class="pv phone layout-centered shadow-soft">
-        <div class="pv-head"><div class="pv-lamp" id="pvLamp">🏮</div>
+        <div class="pv-layout"><div class="pv-side"><div class="pv-visual"><div class="pv-lamp" id="pvLamp"><img src="<?!= HERO_IMAGE_DATA ?>" alt="預設宮廟封面"></div></div><div class="pv-head">
         <div class="pv-title" id="pvTitle">活動報名</div>
         <div class="pv-meta" id="pvMeta"></div>
-        <div class="pv-desc" id="pvDesc" style="white-space:pre-wrap;font-size:12px;color:#6b5d44;margin:4px 0 2px;line-height:1.5"></div></div>
+        </div><div class="pv-box pv-desc" id="pvDesc" style="white-space:pre-wrap;font-size:12px;color:#6b5d44;line-height:1.5"></div></div>
+        <div class="pv-form"><div class="pv-steps"><span>1 填寫資料</span><span>2 選擇項目</span><span>3 付款送出</span></div><div class="pv-box"><div class="pv-h">報名資料</div><div class="pv-empty">姓名　／　聯絡電話　／　地址</div></div>
         <div class="pv-box">
           <div class="pv-h" id="pvItemsTitle">報名品項</div>
           <div id="pvItems"></div>
@@ -451,7 +460,8 @@ button.hero-link{font:inherit;cursor:pointer}
           <div class="pv-pays" id="pvPays"></div>
         </div>
         <div class="pv-btn" id="pvSubmit">送出報名</div>
-      </div></div>
+        </div>
+      </div></div></div>
     </section>
   </aside>
   </div>
@@ -548,10 +558,14 @@ function renderPreview(){
   var meta = [val('orgName'), val('eventDate'), val('eventPlace')].filter(Boolean).join('｜');
   document.getElementById('pvMeta').textContent = meta;
   document.getElementById('pvDesc').textContent = val('eventDesc') || '';
+  document.getElementById('pvDesc').style.display = val('eventDesc') ? 'block' : 'none';
   document.getElementById('eventDescCount').textContent = val('eventDesc').length + ' / 1000';
   var pvLamp = document.getElementById('pvLamp');
-  if (LOGO_DATA) { pvLamp.textContent = ''; var pim = document.createElement('img'); pim.src = LOGO_DATA; pim.alt = ''; pvLamp.appendChild(pim); }
-  else { pvLamp.textContent = '🏮'; }
+  var pvImage = pvLamp.querySelector('img');
+  if (!pvLamp.dataset.defaultSrc) pvLamp.dataset.defaultSrc = pvImage.src;
+  pvImage.src = LOGO_DATA || pvLamp.dataset.defaultSrc;
+  pvImage.alt = LOGO_DATA ? '活動自訂主圖' : '預設宮廟封面';
+  pvLamp.classList.toggle('custom', !!LOGO_DATA);
   var items = readItems(), html = '', total = 0;
   if(!items.length){
     html = '<div class="pv-empty">（尚未加品項）</div>';

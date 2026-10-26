@@ -1,0 +1,9 @@
+# 本機預覽、測試與版控資料不可推送到 Apps Script。
+.gas-local/**
+.git/**
+.agents/**
+.deploy-accounts/**
+screenshots/**
+tests/**
+.claspignore
+.clasp.json
