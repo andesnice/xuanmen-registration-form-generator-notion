@@ -129,6 +129,20 @@ code{background:#f3ece0;padding:1px 5px;border-radius:4px;font-size:13px}
 @media(max-width:940px){.workspace{grid-template-columns:1fr}.sidecol{position:static;display:grid;grid-template-columns:1fr 1fr;gap:16px}.sidecol .card{margin:0}.pv{max-width:100%}}
 @media(max-width:680px){body{padding:12px 10px 32px}.hero{padding:22px 18px 17px;border-radius:16px}.hero::after{font-size:68px;right:8px}.flowbar{grid-template-columns:1fr 1fr}.workspace{gap:14px}.sidecol{display:block}.sidecol .card{margin-bottom:14px}.card{padding:18px 15px;border-radius:14px}.presetbar{grid-template-columns:1fr}.row>div{flex-basis:100%}.btnbar button{flex:1}.payopts{display:grid;grid-template-columns:1fr 1fr}.flowstep{padding:8px}.flowstep .stepnum{flex-basis:25px;height:25px}.table-scroll{margin-left:-15px;margin-right:-15px;padding-left:15px;padding-right:15px}.inline-action{align-items:stretch}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{transition:none!important}}
+/* 建議／意見回饋彈窗（送出寫入「宮廟客戶意見DB」，後端共用 submitFeedbackApi） */
+button.hero-link{font:inherit;cursor:pointer}
+.sg-overlay{position:fixed;inset:0;background:rgba(44,26,14,.5);display:none;align-items:flex-start;justify-content:center;padding:28px 14px;overflow:auto;z-index:1000}
+.sg-overlay.open{display:flex}
+.sg-dialog{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 20px 50px rgba(44,26,14,.28);width:100%;max-width:560px;padding:22px 24px;position:relative;animation:sgIn .18s ease}
+@keyframes sgIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+.sg-close{position:absolute;right:12px;top:12px;width:34px;height:34px;min-height:0;padding:0;border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:50%;font-size:18px;line-height:1;cursor:pointer;box-shadow:none}
+.sg-close:hover{background:#fff4df;color:var(--red)}
+.sg-dialog h2{color:var(--red);font-size:20px;margin:0 36px 4px 0;border-left:4px solid var(--gold);padding-left:9px;line-height:1.3}
+.sg-dialog .sg-sub{color:var(--muted);font-size:13px;margin:0 0 6px}
+.sg-dialog textarea{min-height:120px}
+.sg-counter{text-align:right;font-size:13px;color:#897a62;margin-top:4px}
+.sg-notice{display:flex;gap:9px;background:#fff8e9;border:1px solid #ead2a4;border-radius:10px;padding:10px 12px;margin:14px 0;font-size:13px;color:#695536;line-height:1.55}
+@media(max-width:560px){.sg-dialog{padding:20px 16px}}
 </style>
 </head>
 <body>
@@ -137,7 +151,7 @@ code{background:#f3ece0;padding:1px 5px;border-radius:4px;font-size:13px}
     <div class="eyebrow">活動報名・私人工作台</div>
     <h1>通用活動報名表產生器</h1>
     <p class="sub">依序完成活動設定、Notion 資料庫與專案下載，即可取得獨立可部署的 GAS 報名表＋後台。</p>
-    <div class="hero-actions"><span class="public-badge">🌐 公開使用・免登入 Google</span><a class="hero-link" href="<?!= APP_URL ?>?page=feedback" target="_top">💬 意見回饋</a></div>
+    <div class="hero-actions"><span class="public-badge">🌐 公開使用・免登入 Google</span><button type="button" class="hero-link" onclick="openSuggest()">💡 建議 / 意見回饋</button></div>
     <nav class="flowbar" aria-label="建立流程">
       <a class="flowstep active" id="flowConfig" href="#basicCard" aria-current="step"><span class="stepnum">1</span><span>設定活動</span></a>
       <a class="flowstep" id="flowNotion" href="#notionCard"><span class="stepnum">2</span><span>連接 Notion</span></a>
@@ -440,6 +454,41 @@ code{background:#f3ece0;padding:1px 5px;border-radius:4px;font-size:13px}
       </div></div>
     </section>
   </aside>
+  </div>
+</div>
+
+<!-- 建議／意見回饋彈窗：送出寫入「宮廟客戶意見DB」，後端共用 submitFeedbackApi（與 feedback.html 同一支 API）-->
+<div class="sg-overlay" id="sgOverlay" role="dialog" aria-modal="true" aria-labelledby="sgTitle" aria-hidden="true">
+  <div class="sg-dialog">
+    <button type="button" class="sg-close" onclick="closeSuggest()" aria-label="關閉">&times;</button>
+    <h2 id="sgTitle">💡 建議 / 意見回饋</h2>
+    <p class="sg-sub">操作不順、遇到錯誤或想到新功能，都可以從這裡告訴我們。</p>
+
+    <label for="sgType">回饋類型 <span class="req">*</span></label>
+    <select id="sgType">
+      <option value="功能建議">功能建議</option>
+      <option value="操作問題">操作問題</option>
+      <option value="錯誤回報">錯誤回報</option>
+      <option value="其他">其他</option>
+    </select>
+
+    <label for="sgSubject">主旨（選填）</label>
+    <input type="text" id="sgSubject" maxlength="80" placeholder="例：建立資料庫時希望有更清楚的提示">
+
+    <label for="sgRelated">相關功能（選填）</label>
+    <input type="text" id="sgRelated" maxlength="100" placeholder="例：活動設定、Notion 連線、下載專案">
+
+    <label for="sgContent">意見內容 <span class="req">*</span></label>
+    <textarea id="sgContent" maxlength="1800" placeholder="請描述發生什麼、期待怎麼改善；若是錯誤回報，也可以附上當時做到哪一步。"></textarea>
+    <div class="sg-counter"><span id="sgCount">0</span> / 1800</div>
+
+    <label for="sgEmail">聯絡 Email（選填）</label>
+    <input type="email" id="sgEmail" maxlength="200" autocomplete="email" placeholder="需要回覆時使用">
+
+    <div class="sg-notice"><span>🔒</span><span>回饋會寫入指定的私人 Notion 資料庫。請不要貼入 Notion Token、後台密碼或報名人的個人資料。</span></div>
+
+    <div class="btnbar"><button class="act" type="button" id="sgSubmit" onclick="submitSuggest()">送出建議</button></div>
+    <div class="status" id="sgStatus" role="status" aria-live="polite"></div>
   </div>
 </div>
 
@@ -1124,6 +1173,58 @@ function downloadB64(b64, filename){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
 }
+
+/* ── 建議／意見回饋彈窗：共用後端 submitFeedbackApi，寫入「宮廟客戶意見DB」 ── */
+var sgSubmitted = false;
+function openSuggest(){
+  var ov = document.getElementById('sgOverlay');
+  ov.classList.add('open');
+  ov.setAttribute('aria-hidden','false');
+  setTimeout(function(){ document.getElementById('sgContent').focus(); }, 60);
+}
+function closeSuggest(){
+  var ov = document.getElementById('sgOverlay');
+  ov.classList.remove('open');
+  ov.setAttribute('aria-hidden','true');
+}
+function setSuggestBusy(busy){
+  var btn = document.getElementById('sgSubmit');
+  btn.disabled = busy;
+  btn.textContent = busy ? '送出中…' : (sgSubmitted ? '再送一則建議' : '送出建議');
+}
+function submitSuggest(){
+  var p = {
+    type: val('sgType'),
+    subject: val('sgSubject'),
+    relatedFeature: val('sgRelated'),
+    content: val('sgContent'),
+    contactEmail: val('sgEmail')
+  };
+  if(!p.content){ show('sgStatus','err','請填寫意見內容'); document.getElementById('sgContent').focus(); return; }
+  if(p.content.length > 1800){ show('sgStatus','err','意見內容最多 1800 字'); return; }
+  if(p.contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.contactEmail)){ show('sgStatus','err','聯絡 Email 格式不正確'); return; }
+  setSuggestBusy(true); show('sgStatus','info','正在送出建議…');
+  google.script.run.withSuccessHandler(function(r){
+    if(!r || !r.ok){ setSuggestBusy(false); show('sgStatus','err','❌ '+((r && r.error) || '送出失敗，請稍後再試')); return; }
+    sgSubmitted = true; setSuggestBusy(false);
+    document.getElementById('sgSubject').value = '';
+    document.getElementById('sgRelated').value = '';
+    document.getElementById('sgContent').value = '';
+    document.getElementById('sgCount').textContent = '0';
+    show('sgStatus','ok','✅ 謝謝你的建議，已成功送出。');
+  }).withFailureHandler(function(e){
+    setSuggestBusy(false); show('sgStatus','err','❌ '+(e && e.message ? e.message : '送出失敗，請稍後再試'));
+  }).submitFeedbackApi(p);
+}
+document.getElementById('sgContent').addEventListener('input', function(){
+  document.getElementById('sgCount').textContent = String(this.value.length);
+});
+document.getElementById('sgOverlay').addEventListener('click', function(e){
+  if(e.target === this) closeSuggest();
+});
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape' && document.getElementById('sgOverlay').classList.contains('open')) closeSuggest();
+});
 </script>
 </body>
 </html>
