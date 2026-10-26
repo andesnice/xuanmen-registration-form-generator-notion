@@ -51,9 +51,11 @@ function Invoke-GeneratorPreflight {
   }
   try { $manifest = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'appsscript.json') -Raw | ConvertFrom-Json }
   catch { Fail "部署前檢查失敗：appsscript.json 不是有效 JSON。$($_.Exception.Message)" }
+  # 公開版（PUBLIC_MODE）：access 必須是 ANYONE_ANONYMOUS（任何人可開、不在伺服器存 token）；
+  # executeAs 仍為 USER_DEPLOYING（UrlFetchApp 以擁有者身分執行、吃擁有者配額）。
   if ($manifest.timeZone -ne 'Asia/Taipei' -or $manifest.runtimeVersion -ne 'V8' -or
-      $manifest.webapp.access -ne 'MYSELF' -or $manifest.webapp.executeAs -ne 'USER_DEPLOYING') {
-    Fail '部署前檢查失敗：appsscript.json 的時區、V8 或 Web App 權限不符合產生器規格。'
+      $manifest.webapp.access -ne 'ANYONE_ANONYMOUS' -or $manifest.webapp.executeAs -ne 'USER_DEPLOYING') {
+    Fail '部署前檢查失敗：appsscript.json 的時區、V8 或 Web App 權限不符合產生器規格（公開版需 access=ANYONE_ANONYMOUS、executeAs=USER_DEPLOYING）。'
   }
   & node (Join-Path $PSScriptRoot 'tests\notion-template-safety.tests.cjs')
   if ($LASTEXITCODE -ne 0) { Fail "部署前檢查失敗：產生器／產物測試錯誤（代碼 $LASTEXITCODE）。" }
@@ -204,4 +206,4 @@ Write-Host "   $url" -ForegroundColor Green
 Write-Host "==================================================" -ForegroundColor Green
 Write-Host "網址已儲存到：部署網址.txt" -ForegroundColor Cyan
 Write-Host "也已嘗試複製到剪貼簿；請把網址加入書籤或妥善保存。" -ForegroundColor Yellow
-Write-Host "（access=MYSELF：只有登入的擁有者帳號開得了；首次開網頁會要求授權 UrlFetchApp 打 Notion）" -ForegroundColor DarkGray
+Write-Host "（access=ANYONE_ANONYMOUS：公開版，任何人有網址都能開；executeAs=擁有者，首次由擁有者授權 UrlFetchApp 打 Notion、不在伺服器存使用者 token）" -ForegroundColor DarkGray
