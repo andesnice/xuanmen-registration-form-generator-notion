@@ -469,6 +469,12 @@ function submitFeedbackApi(p) {
 }
 
 // 在 Apps Script 編輯器手動執行，唯讀確認指定的 Notion2 回饋資料庫可存取。
+function authorizeApp() {
+  // 細分授權曾漏勾外部連線時，直接呼叫 UrlFetchApp 不會重新開啟同意畫面。
+  ScriptApp.requireAllScopes(ScriptApp.AuthMode.FULL);
+  return checkFeedbackDatabase();
+}
+
 function checkFeedbackDatabase() {
   var settings = getUsageLogSettings_();
   if (!settings.token) throw new Error('未設定 Script Property：' + GEN.USAGE_LOG_TOKEN_KEY);

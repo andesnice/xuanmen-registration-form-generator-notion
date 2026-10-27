@@ -628,6 +628,16 @@ queueNotionCheck({ code: 200, data: { id: usageDbId, title: [{ plain_text: '報�
 assert.equal(generatorContext.checkUsageLog(), 'Notion2 使用紀錄資料庫連線正常');
 
 const feedbackDbId = '3a48db83bd93805eb572c02b1c9da2c2';
+let feedbackAuthRequested = false;
+generatorContext.ScriptApp.AuthMode = { FULL: 'FULL' };
+generatorContext.ScriptApp.requireAllScopes = (mode) => {
+  assert.equal(mode, 'FULL');
+  feedbackAuthRequested = true;
+};
+queueNotionCheck({ code: 200, data: { id: feedbackDbId } });
+assert.equal(generatorContext.authorizeApp(), 'Notion2 意見回饋資料庫連線正常');
+assert.equal(feedbackAuthRequested, true);
+assert.equal(notionCheckCalls.at(-1).url, 'https://api.notion.com/v1/databases/' + feedbackDbId);
 queueNotionCheck(
   { code: 200, data: { id: feedbackDbId, properties: { 名稱: { type: 'title', title: {} } } } },
   { code: 200, data: { id: feedbackDbId } }
