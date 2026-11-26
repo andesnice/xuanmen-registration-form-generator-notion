@@ -2,9 +2,10 @@
 
 最後核對：2026-11-25。此檔依 `D:/temples/玄門/_AI共用架構紀錄.md` 〇之五，是本專案的單一現況入口；專案 `CLAUDE.md` 開頭的舊版號／舊進度只是歷史紀錄，衝突時以本檔為準。
 
-## 目前狀態：三層資料模型改版「程式＋測試」已完成，線上尚未更新
+## 目前狀態：三層資料模型改版＋商品管理後台已 redeploy 上線 @13（尚未實打 Notion 驗證）
 
-- **線上現況**：對外正式部署仍是 **@12（意見回報外部連線授權檢查）**，產出的是**舊的單一 DB 報名表**。三層改版只在本機磁碟，**尚未 push、尚未 redeploy**，所以現在打開產生器產出的專案還是舊版。
+- **線上現況**：對外正式部署 **2026-11-26 已 redeploy 至 @13（三層資料模型＋商品管理後台）**，網址不變（`AKfycbx9…/exec`、access=MYSELF 只有擁有者能開）。commit `cc2e947` 已 push 到私有 repo `xuanmen-registration-form-generator-notion` 的 main。clasp 已重新登入（擁有者 `andesnice@gmail.com`），`invalid_grant` 已解除。
+- 🔴 **仍未實打 Notion 端到端驗證**：@13 是「測試綠＋靜態審查」就上線的，沒有真的用它產一張三層表、建三層 DB、跑 submit／取消／後台改品項。上線≠已驗；依賴前請先產一張測試表驗過。
 - **本輪完成的是「產生器本體改成一律產出三層資料模型」**：訂單主檔 ← 交易明細 → 商品檔（項目設定檔）。即使最單純的活動也走三層；只產新表，**沒有舊表遷移工具**。
 - 三層定義：
   - **訂單主檔**（runtime `notionOrderDbId_()`）：一列＝一筆報名，`總金額` 是唯一財務真值，**沒有每品項的 Number 欄**。
@@ -37,8 +38,8 @@
 
 ## 尚未驗證與卡點
 
-- 🔴 **clasp 登入失效**：`clasp list-deployments` 回 `invalid_grant / invalid_rapt`。要先在終端機 `clasp login`（擁有者 `andesnice@gmail.com`）才能 push／redeploy。未登入前，三層改版無法上線。
-- **整個三層改版都還沒實打 Notion 驗證**：沒有實際建過三層 DB、沒跑過一次真的 submit／取消／後台改品項。目前證據只到「本機 vm 測試全綠」，不等於線上會過。
+- ~~clasp 登入失效~~ → 2026-11-26 已 `clasp login` 重新授權、已 redeploy @13。
+- **整個三層改版都還沒實打 Notion 驗證**：沒有實際建過三層 DB、沒跑過一次真的 submit／取消／後台改品項。目前證據只到「本機 vm 測試全綠」，**@13 雖已上線但不等於線上會過**。
 - `node tests/generator-local-smoke.tests.cjs` 本輪**未跑**：需要本機 GAS 模擬器在 port 3100，環境沒起這台（`fetch failed`）。
 - 這一版尚未經 Codex 依 `SPEC.md` 驗收（本案採「Claude 寫、Codex 驗」）。
 
