@@ -6,6 +6,7 @@
 
 - **線上現況**：對外正式部署 **2026-11-26 已 redeploy 至 @13（三層資料模型＋商品管理後台）**，網址不變（`AKfycbx9…/exec`、access=MYSELF 只有擁有者能開）。commit `cc2e947` 已 push 到私有 repo `xuanmen-registration-form-generator-notion` 的 main。clasp 已重新登入（擁有者 `andesnice@gmail.com`），`invalid_grant` 已解除。
 - 🔴 **仍未實打 Notion 端到端驗證**：@13 是「測試綠＋靜態審查」就上線的，沒有真的用它產一張三層表、建三層 DB、跑 submit／取消／後台改品項。上線≠已驗；依賴前請先產一張測試表驗過。
+- 🌐 **2026-11-26 此 repo 已轉 PUBLIC**（使用者拍板，覆蓋 2026-08-15「全部 private 不轉 public」的舊決定；僅此一個 repo 例外）。公開前已掃過工作目錄＋全部歷史無 Notion/Google 金鑰；真 token 在 Script Properties 不在 repo。repo 內含使用者 Email 與回報用 DB ID（`3a48db83…`／`d7a8da3c…`），使用者同意公開。🔴 **之後任何 commit 進此 repo 前，務必再掃一次不要混進活的憑證**。
 - **本輪完成的是「產生器本體改成一律產出三層資料模型」**：訂單主檔 ← 交易明細 → 商品檔（項目設定檔）。即使最單純的活動也走三層；只產新表，**沒有舊表遷移工具**。
 - 三層定義：
   - **訂單主檔**（runtime `notionOrderDbId_()`）：一列＝一筆報名，`總金額` 是唯一財務真值，**沒有每品項的 Number 欄**。
