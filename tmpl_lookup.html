@@ -40,6 +40,8 @@ label{display:block;font-weight:700;font-size:calc(var(--font-size) - 2px);margi
 {{CFG_INJECT}}
 var L=CFG.LABELS||{PERSON:'報名人',CONTACT:'聯絡人',ITEMS:'報名項目',PAYMENT:'付款方式',NOTE:'備註',TOTAL:'總金額'};
 var ROWS=[], CLOSED=false, CANCELLED=false, PARTIAL=false, STATE={};
+// 三層：品項以商品檔為即時真值，查詢回傳 items 後覆蓋；查詢前／失敗用 CONFIG 快照
+var ITEMS=(CFG.QTY_ITEMS||[]).slice();
 function $(id){return document.getElementById(id)}
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function money(n){return 'NT$ '+Number(n||0).toLocaleString('en-US')}
@@ -48,7 +50,7 @@ function lookup(){
   $('gateMsg').textContent='查詢中…';
   google.script.run.withSuccessHandler(function(r){
     if(!r||!r.ok){$('gateMsg').className='msg err';$('gateMsg').textContent=(r&&r.error)||'查詢失敗';return}
-    ROWS=r.data||[];CLOSED=!!r.closed;CANCELLED=!!r.cancelled;PARTIAL=!!r.partiallyCancelled;STATE=r.state||{};$('gateMsg').textContent='';render();
+    ROWS=r.data||[];CLOSED=!!r.closed;CANCELLED=!!r.cancelled;PARTIAL=!!r.partiallyCancelled;STATE=r.state||{};if(Array.isArray(r.items)&&r.items.length)ITEMS=r.items;$('gateMsg').textContent='';render();
   }).withFailureHandler(function(e){$('gateMsg').className='msg err';$('gateMsg').textContent=e.message}).publicLookupApi($('reg').value.trim(),$('phone').value.trim());
 }
 function sharedInput(k,v,type,opts,label){
@@ -70,7 +72,7 @@ function render(){
   var pay=document.querySelector('[data-shared="繳款方式"]');pay.onchange=toggleRemit;toggleRemit();
   $('people').innerHTML=ROWS.map(function(row,i){
     return '<div class="person" data-page="'+esc(row.pageId)+'"><strong>'+esc(L.PERSON)+' '+(i+1)+'</strong>'+sharedInput('功德主',row['功德主'],null,null,L.PERSON)+
-      (CFG.QTY_ITEMS||[]).map(function(it){var amount=it.pricingMode==='donation'||it.pricingMode==='minimum';return '<div class="item"><label>'+esc(it.id)+(amount?'（金額）':'（數量）')+'</label><input data-item="'+esc(it.id)+'" inputmode="numeric" value="'+esc(row[it.id]||0)+'"></div>'}).join('')+'</div>';
+      ITEMS.map(function(it){var amount=it.pricingMode==='donation'||it.pricingMode==='minimum';return '<div class="item"><label>'+esc(it.id)+(amount?'（金額）':'（數量）')+'</label><input data-item="'+esc(it.id)+'" inputmode="numeric" value="'+esc(row[it.id]||0)+'"></div>'}).join('')+'</div>';
   }).join('');
   $('editor').className='';
   $('regStatus').className='status'+(CANCELLED||PARTIAL?' cancelled':'');
@@ -95,7 +97,7 @@ function resendMail(){
   }).withFailureHandler(function(e){$('resendMsg').className='msg err';$('resendMsg').textContent=e.message}).publicResendMailApi($('reg').value.trim(),$('phone').value.trim(),email);
 }
 function toggleRemit(){var p=document.querySelector('[data-shared="繳款方式"]');$('remitEdit').style.display=p&&p.value==='匯款'?'block':'none'}
-function rowTotal(root){var t=0;(CFG.QTY_ITEMS||[]).forEach(function(it){var el=Array.prototype.slice.call(root.querySelectorAll('[data-item]')).filter(function(x){return x.dataset.item===it.id})[0],v=Number(el?el.value:0)||0;if(!it.pricingMode||it.pricingMode==='fixed')t+=v*(it.price||0);else if(it.pricingMode==='donation'||it.pricingMode==='minimum')t+=v});return t}
+function rowTotal(root){var t=0;ITEMS.forEach(function(it){var el=Array.prototype.slice.call(root.querySelectorAll('[data-item]')).filter(function(x){return x.dataset.item===it.id})[0],v=Number(el?el.value:0)||0;if(!it.pricingMode||it.pricingMode==='fixed')t+=v*(it.price||0);else if(it.pricingMode==='donation'||it.pricingMode==='minimum')t+=v});return t}
 function recalc(){var t=0,selected={};document.querySelectorAll('.person').forEach(function(p){t+=rowTotal(p);p.querySelectorAll('[data-item]').forEach(function(x){if(Number(x.value)>0)selected[x.dataset.item]=true})});$('grandTotal').textContent=L.TOTAL+' '+money(t);document.querySelectorAll('[data-condition]').forEach(function(x){x.style.display=!x.dataset.condition||selected[x.dataset.condition]?'block':'none'})}
 function save(){
   var shared={};document.querySelectorAll('[data-shared]').forEach(function(el){shared[el.dataset.shared]=el.dataset.bool?el.checked:el.value});

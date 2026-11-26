@@ -59,7 +59,10 @@ const context = {
   },
   NOTION_VERSION: '2022-06-28',
   notionToken_: () => 'test-token',
-  notionDbId_: () => '0123456789abcdef0123456789abcdef',
+  // 三層模型：主檔／明細／商品檔各一個 DB ID。商品檔回 '' → effectiveItems_ 走 CONFIG.QTY_ITEMS fallback（不打 API）。
+  notionOrderDbId_: () => '0123456789abcdef0123456789abcdef',
+  notionDetailDbId_: () => 'fedcba9876543210fedcba9876543210',
+  notionItemDbId_: () => '',
   Utilities: { sleep: () => undefined },
   HtmlService: {},
   LockService: {
@@ -77,12 +80,20 @@ vm.createContext(context);
 vm.runInContext(utilsSource, context, { filename: 'Utils.gs' });
 vm.runInContext(codeSource, context, { filename: 'Code.gs' });
 
+// 保留真正的 effectiveItems_（會快取 CONFIG.QTY_ITEMS fallback，limit 0），之後覆寫過要還原時用。
+const realEffectiveItems = context.effectiveItems_;
+
 context.notionQueryAll_ = () => {
   events.push('query');
   return { ok: true, pages };
 };
-context.notionApi_ = (method, apiPath) => {
-  if (method === 'post' && apiPath === '/pages') events.push('write');
+// 明細查詢：預設回空（submit happy-path 的品項 limit 0，不會觸發；覆寫 effectiveItems_ 成 limit>0 才會打）。
+context.queryAllDetails_ = () => ({ ok: true, pages: [] });
+context.notionApi_ = (method, apiPath, body) => {
+  if (method === 'post' && apiPath === '/pages') {
+    const dbId = body && body.parent && body.parent.database_id;
+    events.push(dbId === context.notionDetailDbId_() ? 'detail-write' : 'order-write');
+  }
   return { ok: true, data: { id: 'new-page' } };
 };
 
@@ -118,14 +129,14 @@ lockAvailable = true;
 const ok = context.submitApi(payload());
 assert.equal(ok.ok, true);
 assert.equal(ok.registrationId.startsWith('R-'), true);
-assert.deepEqual(events, ['lock', 'query', 'write', 'release']);
+// 三層：一筆報名先寫訂單主檔，再寫一筆交易明細（供品 value 1）。商品檔 limit 0 → 不打明細查詢。
+assert.deepEqual(events, ['lock', 'query', 'order-write', 'detail-write', 'release']);
 
 events.length = 0;
 pages = [{
   properties: {
     '功德主': { title: [{ plain_text: '既有資料' }] },
-    '電話': { phone_number: '0900000000' },
-    '供品': { number: 1 }
+    '電話': { phone_number: '0900000000' }
   }
 }];
 const full = context.submitApi(payload({ '功德主': '另一位', '電話': '0911111111' }));
@@ -188,6 +199,10 @@ context.reportUpdateApi = () => {
   events.push('patch');
   return { ok: true };
 };
+// 三層：publicUpdate 以商品檔的 limit 判定剩餘數量 → 覆寫成「供品」limit 1 的即時品項。
+context.effectiveItems_ = () => [
+  { id: '供品', pricingMode: 'fixed', price: 100, minAmount: 0, unit: '份', limit: 1, pageId: '', sort: 1 }
+];
 const updateOk = context.publicUpdateApi('R-TEST', '0912-345-678', {
   shared: { '地址': '' },
   people: [{ pageId: currentId, '功德主': '王大德', '供品': 1 }]
@@ -265,21 +280,30 @@ events.length = 0;
 context.CONFIG.REGISTRATION_MODE = 'single';
 context.CONFIG.CAPACITY.total = 1;
 context.CONFIG.CAPACITY.items['供品'] = 1;
+// 還原真正的 effectiveItems_（快取的 fallback limit 0）→ 不打明細查詢。
+context.effectiveItems_ = realEffectiveItems;
 pages = [{
   properties: {
     '功德主': { title: [{ plain_text: '王大德' }] },
     '電話': { phone_number: '0912345678' },
-    '供品': { number: 1 },
     '報名狀態': { select: { name: '已取消' } }
   }
 }];
 const reuseCancelledSlot = context.submitApi(payload());
 assert.equal(reuseCancelledSlot.ok, true);
-assert.deepEqual(events, ['lock', 'query', 'write', 'release']);
+assert.deepEqual(events, ['lock', 'query', 'order-write', 'detail-write', 'release']);
 
-context.loadAllRows_ = () => ({ ok: true, data: [
-  { pageId: currentId, '供品': 1, '報名狀態': '有效' },
-  { pageId: secondId, '供品': 99, '報名狀態': '已取消' }
+// capacityLoadApi 走商品檔 limit + 主檔有效筆數 + 明細有效數量。
+context.effectiveItems_ = () => [
+  { id: '供品', pricingMode: 'fixed', price: 100, minAmount: 0, unit: '份', limit: 2, pageId: '', sort: 1 }
+];
+context.notionQueryAll_ = () => ({ ok: true, pages: [
+  { properties: {} },
+  { properties: { '報名狀態': { select: { name: '已取消' } } } }
+] });
+context.queryAllDetails_ = () => ({ ok: true, pages: [
+  { properties: { '品項名稱': { rich_text: [{ plain_text: '供品' }] }, '數量': { number: 1 }, '狀態': { select: { name: '有效' } } } },
+  { properties: { '品項名稱': { rich_text: [{ plain_text: '供品' }] }, '數量': { number: 99 }, '狀態': { select: { name: '已取消' } } } }
 ] });
 context.CONFIG.CAPACITY.total = 2;
 context.CONFIG.CAPACITY.items['供品'] = 2;
@@ -287,7 +311,7 @@ const remaining = context.capacityLoadApi();
 assert.equal(remaining.totalRemaining, 1);
 assert.equal(remaining.itemRemaining['供品'], 1);
 
-// 取消整筆家庭報名時，鎖內 PATCH 全部資料；再次取消為冪等成功。
+// 取消整筆家庭報名時，鎖內 PATCH 主檔全部有效列＋連動取消其交易明細；再次取消為冪等成功。
 events.length = 0;
 context.publicLookupApi = () => {
   events.push('lookup');
@@ -296,18 +320,31 @@ context.publicLookupApi = () => {
     { pageId: secondId, '報名狀態': '有效' }
   ] };
 };
+// 明細：detail-1 屬 currentId 且有效 → 連動取消；detail-2 已取消 → 略過。
+context.queryAllDetails_ = () => ({ ok: true, pages: [
+  { id: 'detail-1', properties: { '訂單': { relation: [{ id: currentId }] }, '狀態': { select: { name: '有效' } } } },
+  { id: 'detail-2', properties: { '訂單': { relation: [{ id: secondId }] }, '狀態': { select: { name: '已取消' } } } }
+] });
 context.notionApi_ = (method, apiPath, body) => {
   if (method === 'patch') {
-    events.push('cancel-patch');
-    assert.equal(body.properties['報名狀態'].select.name, '已取消');
-    assert.ok(body.properties['取消時間'].date.start);
+    if (apiPath.indexOf('/pages/detail-') === 0) {
+      events.push('detail-cancel');
+      assert.equal(body.properties['狀態'].select.name, '已取消');
+    } else {
+      events.push('cancel-patch');
+      assert.equal(body.properties['報名狀態'].select.name, '已取消');
+      assert.ok(body.properties['取消時間'].date.start);
+    }
   }
   return { ok: true, data: { id: apiPath } };
 };
 const cancelled = context.publicCancelApi('R-TEST', '0912345678');
 assert.equal(cancelled.ok, true);
 assert.equal(cancelled.count, 2);
-assert.deepEqual(events, ['lock', 'lookup', 'cancel-patch', 'cancel-patch', 'release']);
+assert.deepEqual(events, ['lock', 'lookup', 'cancel-patch', 'cancel-patch', 'detail-cancel', 'release']);
+
+// 後續取消測試不帶明細 fixture → 還原成空，維持既有序列。
+context.queryAllDetails_ = () => ({ ok: true, pages: [] });
 
 events.length = 0;
 context.publicLookupApi = () => {
@@ -462,7 +499,7 @@ generatorContext.PropertiesService = { getUserProperties: () => ({
   getProperties: () => Object.assign({}, scriptPropertyStore)
 }) };
 generatorContext.Session = { getActiveUser: () => ({ getEmail: () => 'operator@example.com' }) };
-generatorContext.Utilities = { formatDate: () => '2026-09-20 12:34:56' };
+generatorContext.Utilities = { formatDate: () => '2026-09-20 12:34:56', sleep: () => undefined };
 generatorContext.UrlFetchApp = { fetch: (url, options) => {
   notionCheckCalls.push({ url, options });
   const next = notionCheckResponses.shift();
@@ -555,27 +592,63 @@ const createDbPayload = {
   ],
   customFields: [{ name: '梯次', type: 'select', options: ['上午', '下午'] }]
 };
-queueNotionCheck({ code: 200, data: { id: 'registration-db-direct', url: 'https://notion.test/direct' } });
+// 三層建表（page 模式）：商品檔 DB → 訂單主檔 DB → 交易明細 DB → seed 兩筆初始品項。
+queueNotionCheck(
+  { code: 200, data: { id: 'item-db-direct', url: 'https://notion.test/item' } },
+  { code: 200, data: { id: 'registration-db-direct', url: 'https://notion.test/direct' } },
+  { code: 200, data: { id: 'detail-db-direct', url: 'https://notion.test/detail' } },
+  { code: 200, data: { id: 'seed-1' } },
+  { code: 200, data: { id: 'seed-2' } }
+);
 const directCreate = generatorContext.createDbCore_(createDbPayload);
 assert.equal(directCreate.ok, true);
 assert.equal(directCreate.dbId, 'registration-db-direct');
-const directCreateCall = notionCheckCalls.at(-1);
-assert.equal(directCreateCall.options.method, 'post');
-assert.match(directCreateCall.url, /\/databases$/);
-const directCreateBody = JSON.parse(directCreateCall.options.payload);
-assert.equal(directCreateBody.parent.page_id, notionTargetId);
-assert.ok(directCreateBody.properties['帳號後五碼'].rich_text);
-assert.ok(directCreateBody.properties['聯絡人'].rich_text);
-assert.ok(directCreateBody.properties['固定品項'].number);
-assert.ok(directCreateBody.properties['梯次'].select);
-assert.equal(Object.hasOwn(directCreateBody.properties, '功德系統'), false);
+assert.equal(directCreate.orderDbId, 'registration-db-direct');
+assert.equal(directCreate.itemDbId, 'item-db-direct');
+assert.equal(directCreate.detailDbId, 'detail-db-direct');
+const directCalls = notionCheckCalls.slice(-5);
+assert.deepEqual(directCalls.map((call) => call.options.method), ['post', 'post', 'post', 'post', 'post']);
+// ① 商品檔
+assert.match(directCalls[0].url, /\/databases$/);
+const itemDbBody = JSON.parse(directCalls[0].options.payload);
+assert.equal(itemDbBody.parent.page_id, notionTargetId);
+assert.ok(itemDbBody.properties['品項名稱'].title);
+assert.ok(itemDbBody.properties['計價模式'].select);
+// ② 訂單主檔：有財務真值欄、無任何「每品項 Number」欄
+assert.match(directCalls[1].url, /\/databases$/);
+const orderDbBody = JSON.parse(directCalls[1].options.payload);
+assert.equal(orderDbBody.parent.page_id, notionTargetId);
+assert.ok(orderDbBody.properties['帳號後五碼'].rich_text);
+assert.ok(orderDbBody.properties['聯絡人'].rich_text);
+assert.ok(orderDbBody.properties['總金額'].number);
+assert.ok(orderDbBody.properties['報名狀態'].select);
+assert.ok(orderDbBody.properties['梯次'].select);
+assert.equal(Object.hasOwn(orderDbBody.properties, '固定品項'), false);
+assert.equal(Object.hasOwn(orderDbBody.properties, '功德系統'), false);
+// ③ 交易明細：relation 連回主檔與商品檔
+assert.match(directCalls[2].url, /\/databases$/);
+const detailDbBody = JSON.parse(directCalls[2].options.payload);
+assert.equal(detailDbBody.parent.page_id, notionTargetId);
+assert.equal(detailDbBody.properties['訂單'].relation.database_id, 'registration-db-direct');
+assert.equal(detailDbBody.properties['商品'].relation.database_id, 'item-db-direct');
+// ④ seed 初始品項寫進商品檔
+assert.match(directCalls[3].url, /\/pages$/);
+const seedBody = JSON.parse(directCalls[3].options.payload);
+assert.equal(seedBody.parent.database_id, 'item-db-direct');
+assert.ok(seedBody.properties['品項名稱'].title);
 
+// 三層建表（activity_database 模式）：父庫缺「報名資料庫 ID」欄 → 先 PATCH 補欄；建活動頁；
+// 於活動頁下建商品檔／訂單主檔／交易明細＋seed 兩筆；最後回寫訂單主檔 ID 到活動頁。
 const activityDbId = 'cccccccccccccccccccccccccccccccc';
 queueNotionCheck(
   { code: 200, data: { id: activityDbId, properties: { 活動名稱: { type: 'title', title: {} } } } },
   { code: 200, data: { id: activityDbId } },
   { code: 200, data: { id: 'activity-page-created', url: 'https://notion.test/activity' } },
+  { code: 200, data: { id: 'item-db-child', url: 'https://notion.test/item-child' } },
   { code: 200, data: { id: 'registration-db-child', url: 'https://notion.test/child' } },
+  { code: 200, data: { id: 'detail-db-child', url: 'https://notion.test/detail-child' } },
+  { code: 200, data: { id: 'seed-a' } },
+  { code: 200, data: { id: 'seed-b' } },
   { code: 200, data: { id: 'activity-page-created' } }
 );
 const activityCreate = generatorContext.createDbCore_(Object.assign({}, createDbPayload, {
@@ -583,13 +656,24 @@ const activityCreate = generatorContext.createDbCore_(Object.assign({}, createDb
 }));
 assert.equal(activityCreate.ok, true);
 assert.equal(activityCreate.dbId, 'registration-db-child');
+assert.equal(activityCreate.orderDbId, 'registration-db-child');
+assert.equal(activityCreate.itemDbId, 'item-db-child');
+assert.equal(activityCreate.detailDbId, 'detail-db-child');
 assert.equal(activityCreate.activityPageId, 'activity-page-created');
-const activityCalls = notionCheckCalls.slice(-5);
-assert.deepEqual(activityCalls.map((call) => call.options.method), ['get', 'patch', 'post', 'post', 'patch']);
+const activityCalls = notionCheckCalls.slice(-9);
+assert.deepEqual(
+  activityCalls.map((call) => call.options.method),
+  ['get', 'patch', 'post', 'post', 'post', 'post', 'post', 'post', 'patch']
+);
 assert.ok(JSON.parse(activityCalls[1].options.payload).properties['報名資料庫 ID'].rich_text);
 assert.equal(JSON.parse(activityCalls[2].options.payload).parent.database_id, activityDbId);
 assert.equal(JSON.parse(activityCalls[3].options.payload).parent.page_id, 'activity-page-created');
-assert.equal(JSON.parse(activityCalls[4].options.payload).properties['報名資料庫 ID'].rich_text[0].text.content, 'registration-db-child');
+assert.equal(JSON.parse(activityCalls[4].options.payload).parent.page_id, 'activity-page-created');
+assert.equal(JSON.parse(activityCalls[5].options.payload).parent.page_id, 'activity-page-created');
+assert.equal(JSON.parse(activityCalls[5].options.payload).properties['訂單'].relation.database_id, 'registration-db-child');
+assert.equal(JSON.parse(activityCalls[5].options.payload).properties['商品'].relation.database_id, 'item-db-child');
+assert.equal(JSON.parse(activityCalls[6].options.payload).parent.database_id, 'item-db-child');
+assert.equal(JSON.parse(activityCalls[8].options.payload).properties['報名資料庫 ID'].rich_text[0].text.content, 'registration-db-child');
 assert.equal(notionCheckResponses.length, 0);
 
 const usageDbId = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -682,7 +766,9 @@ const generatedCfg = generatorContext.normalizeCfg_({
   labels: { person: '學員', contact: '課程聯絡人', items: '課程方案', payment: '付款方式', note: '學習需求', total: '應付金額' },
   registrationStart: '2026-08-10T09:00', registrationEnd: '2026-08-10T17:00',
   registrationMode: 'single', paymentOptions: ['現金'], items: [{ name: '供品', pricingMode: 'fixed', price: 100 }],
-  dbId: '0123456789abcdef0123456789abcdef'
+  orderDbId: '0123456789abcdef0123456789abcdef',
+  detailDbId: '11111111111111111111111111111111',
+  itemDbId: '22222222222222222222222222222222'
 });
 assert.equal(generatorContext.validateCfg_(generatedCfg, true), '');
 assert.equal(generatedCfg.THEME_BG, '#F1F6F2');
@@ -697,25 +783,29 @@ assert.deepEqual(JSON.parse(JSON.stringify(generatedCfg.LABELS)), {
   PERSON: '學員', CONTACT: '課程聯絡人', ITEMS: '課程方案', PAYMENT: '付款方式', NOTE: '學習需求', TOTAL: '應付金額'
 });
 assert.match(generatorContext.validateCfg_(Object.assign({}, generatedCfg, { REGISTRATION_END: '2026-08-10T08:59' }), true), /晚於/);
-const schema = generatorContext.buildDbProperties_(generatedCfg);
+const schema = generatorContext.buildOrderDbProps_(generatedCfg);
 assert.ok(schema['報名狀態'].select);
 assert.ok(schema['取消時間'].date);
-assert.equal(JSON.parse(generatorContext.schemaKey_(generatedCfg)).schemaVersion, 3);
+assert.equal(JSON.parse(generatorContext.schemaKey_(generatedCfg)).schemaVersion, 4);
 const generatedFiles = generatorContext.buildFiles_(Object.assign({}, generatedCfg, { NOTION_TOKEN: 'secret' }));
 const courseFamilyCfg = generatorContext.normalizeCfg_({
   orgName: '測試主辦單位', event: 'course-family', eventName: '測試課程', reportPassword: 'password123',
   labels: { person: '學員', contact: '課程聯絡人', items: '課程方案', payment: '付款方式', note: '學習需求', total: '應付金額' },
   registrationMode: 'family', paymentOptions: ['現金'], items: [{ name: '課程方案 A', pricingMode: 'fixed', price: 100 }],
-  dbId: '0123456789abcdef0123456789abcdef'
+  orderDbId: '0123456789abcdef0123456789abcdef',
+  detailDbId: '11111111111111111111111111111111',
+  itemDbId: '22222222222222222222222222222222'
 });
 assert.equal(generatorContext.validateCfg_(courseFamilyCfg, true), '');
-const courseFamilySchema = generatorContext.buildDbProperties_(courseFamilyCfg);
+const courseFamilySchema = generatorContext.buildOrderDbProps_(courseFamilyCfg);
 for (const fixedKey of ['功德主', '聯絡人', '繳款方式', '備註', '總金額']) {
   assert.ok(Object.hasOwn(courseFamilySchema, fixedKey), 'fixed Notion schema key missing: ' + fixedKey);
 }
 const courseFamilyFiles = generatorContext.buildFiles_(Object.assign({}, courseFamilyCfg, { NOTION_TOKEN: 'secret' }));
 const courseFamilyRuntime = {
-  console, Date, Math, JSON, Object, Array, String, Number, RegExp, isFinite, isNaN, parseInt
+  console, Date, Math, JSON, Object, Array, String, Number, RegExp, isFinite, isNaN, parseInt,
+  // 產出專案的三個 DB ID 正式時由 Secrets.gs 提供；本測試不載 Secrets.gs，故注入（商品檔 '' → 走 CONFIG fallback，不打 API）。
+  notionOrderDbId_: () => '', notionDetailDbId_: () => '', notionItemDbId_: () => ''
 };
 vm.createContext(courseFamilyRuntime);
 vm.runInContext(courseFamilyFiles.find((f) => f.name === 'Config.gs').content, courseFamilyRuntime, { filename: 'course-family-Config.gs' });
@@ -744,7 +834,9 @@ const legalBracesCfg = generatorContext.normalizeCfg_({
   eventDesc: '可合法顯示 {{SALE_2026}} 文字', reportPassword: 'password123',
   registrationMode: 'single', paymentOptions: ['現金'],
   items: [{ name: '供品', pricingMode: 'fixed', price: 100 }],
-  dbId: '0123456789abcdef0123456789abcdef'
+  orderDbId: '0123456789abcdef0123456789abcdef',
+  detailDbId: '11111111111111111111111111111111',
+  itemDbId: '22222222222222222222222222222222'
 });
 const legalBracesFiles = generatorContext.buildFiles_(Object.assign({}, legalBracesCfg, { NOTION_TOKEN: 'secret' }));
 const legalBracesConfig = legalBracesFiles.find((f) => f.name === 'Config.gs').content;

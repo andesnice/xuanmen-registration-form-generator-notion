@@ -119,11 +119,23 @@ body .bar input,body .btn,body .tab,body table,body .buy-table,body #mask input,
   <div class="tabs">
     <button class="tab on" data-tab="detail" type="button" onclick="switchTab('detail')">📋 報名明細</button>
     <button class="tab" data-tab="buy" type="button" onclick="switchTab('buy')">🛒 物品數量統計</button>
+    <button class="tab" data-tab="items" type="button" onclick="switchTab('items')">🏷 商品管理</button>
   </div>
   <div id="tabDetail">
     <div class="tblwrap"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
   </div>
   <div id="tabBuy" style="display:none"></div>
+  <div id="tabItems" style="display:none">
+    <div class="bar" style="margin-top:0">
+      <button class="btn" type="button" onclick="addItemRow()">➕ 新增品項</button>
+      <button class="btn ghost" type="button" id="itemsRefreshBtn" onclick="loadItems()">🔄 重新讀取商品檔</button>
+      <span id="itemsMsg" style="color:#8a7a5a;font-size:13px;margin-left:auto"></span>
+    </div>
+    <p style="color:#8a7a5a;font-size:13px;margin:4px 0 10px">
+      這裡直接改的是「商品檔」資料庫，存檔後報名表會即時讀到新價格／品項（不必重新產生或部署）。停用的品項報名表不顯示，但舊訂單明細不受影響。
+    </p>
+    <div class="tblwrap"><table><thead id="itemsHead"></thead><tbody id="itemsBody"></tbody></table></div>
+  </div>
 </div>
 
 <!-- 編輯 Modal -->
@@ -154,14 +166,16 @@ var ROWS = [];
 var AUTH = '';
 var PAY_STATUS = CFG.PAY_STATUS || [];
 var PAY_OPTIONS = CFG.PAY_OPTIONS || [];
-var ITEM_IDS = (CFG.QTY_ITEMS || []).map(function(it){ return it.id; });
+// 三層：品項以商品檔（effectiveItems）為即時真值，載入時用 reportLoadApi 回傳的 items 覆寫；查不到才用 CONFIG 快照。
+var ITEMS_LIVE = (CFG.QTY_ITEMS || []).slice();
+var ITEM_IDS = ITEMS_LIVE.map(function(it){ return it.id; });
 var CUSTOM_FIELDS = CFG.CUSTOM_FIELDS || [];
 var IS_FAMILY = CFG.REGISTRATION_MODE === 'family';
 
 function $(id){ return document.getElementById(id); }
 function money(n){ return Number(n||0).toLocaleString('en-US'); }
 function escHtml(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
-function calcTotal(r){ var t=0; (CFG.QTY_ITEMS||[]).forEach(function(it){ var v=Number(r[it.id])||0; t+=(!it.pricingMode||it.pricingMode==='fixed')?v*(Number(it.price)||0):((it.pricingMode==='donation'||it.pricingMode==='minimum')?v:0); }); return t; }
+function calcTotal(r){ var t=0; ITEMS_LIVE.forEach(function(it){ var v=Number(r[it.id])||0; t+=(!it.pricingMode||it.pricingMode==='fixed')?v*(Number(it.price)||0):((it.pricingMode==='donation'||it.pricingMode==='minimum')?v:0); }); return t; }
 function isActive(r){ return String((r&&r['報名狀態'])||'有效')!=='已取消'; }
 
 // ── 密碼門 ──
@@ -188,6 +202,7 @@ function load(){
     if (btn){ btn.disabled = false; btn.textContent = '🔄 重新整理'; }
     if (!r || !r.ok){ alert('讀取失敗：' + ((r&&r.error)||'未知錯誤')); return; }
     ROWS = Array.isArray(r.data) ? r.data : [];
+    if (Array.isArray(r.items) && r.items.length){ ITEMS_LIVE = r.items; ITEM_IDS = ITEMS_LIVE.map(function(it){ return it.id; }); }
     render();
     var ls = $('lastSync');
     if (ls){
@@ -223,7 +238,7 @@ function renderStats(list){
   } else {
     html += stat('有效報名筆數', active.length);
   }
-  (CFG.QTY_ITEMS || []).forEach(function(it){
+  ITEMS_LIVE.forEach(function(it){
     var qty = active.reduce(function(s,r){ return s + (Number(r[it.id]) || 0); }, 0);
     if (it.pricingMode === 'donation' || it.pricingMode === 'minimum') html += stat(it.id + '總額', 'NT$ ' + money(qty));
     else html += stat(it.id + '數量', money(qty) + ' ' + (it.unit || '份'));
@@ -237,18 +252,101 @@ function renderStats(list){
 
 // ── 分頁切換 ──
 var TAB = 'detail';
+var ITEMS_MANAGE_LOADED = false;
 function switchTab(t){
   TAB = t;
   document.querySelectorAll('.tab').forEach(function(b){ b.classList.toggle('on', b.dataset.tab === t); });
   $('tabDetail').style.display = (t === 'detail') ? 'block' : 'none';
   $('tabBuy').style.display = (t === 'buy') ? 'block' : 'none';
+  $('tabItems').style.display = (t === 'items') ? 'block' : 'none';
+  if (t === 'items' && !ITEMS_MANAGE_LOADED) loadItems();
+}
+
+// ── 商品管理：直接編輯商品檔（存檔後報名表即時生效，不必重新產生／部署）──
+var PRICING_LABELS = ['固定單價','隨喜','免費','最低金額'];
+function itemsMsg(t, isErr){ var el=$('itemsMsg'); if(el){ el.textContent=t||''; el.style.color=isErr?'#c0392b':'#8a7a5a'; } }
+function loadItems(){
+  var btn=$('itemsRefreshBtn'); if(btn){ btn.disabled=true; btn.textContent='⏳ 讀取中…'; }
+  itemsMsg('讀取商品檔中…');
+  google.script.run.withSuccessHandler(function(r){
+    if(btn){ btn.disabled=false; btn.textContent='🔄 重新讀取商品檔'; }
+    if(!r || !r.ok){ itemsMsg((r&&r.error)||'讀取失敗', true); return; }
+    ITEMS_MANAGE_LOADED = true;
+    renderItemsTable(r.items||[]);
+    itemsMsg('共 ' + (r.items||[]).length + ' 個品項');
+  }).withFailureHandler(function(e){
+    if(btn){ btn.disabled=false; btn.textContent='🔄 重新讀取商品檔'; }
+    itemsMsg('讀取失敗：'+e.message, true);
+  }).itemManageLoadApi(AUTH);
+}
+function itemHead(){
+  return '<tr>'+['品項名稱','計價模式','單價','最低金額','單位','數量上限','排序','場次','啟用','操作']
+    .map(function(h){ return '<th>'+escHtml(h)+'</th>'; }).join('')+'</tr>';
+}
+function pricingSelect(v){
+  return '<select data-field="pricingMode">'+PRICING_LABELS.map(function(p){
+    return '<option'+(p===v?' selected':'')+'>'+escHtml(p)+'</option>'; }).join('')+'</select>';
+}
+function itemRowHtml(it){
+  it = it || {};
+  return '<tr data-pageid="'+escHtml(it.pageId||'')+'">'
+    + '<td><input data-field="name" value="'+escHtml(it.name||'')+'" style="min-width:110px"></td>'
+    + '<td>'+pricingSelect(it.pricingMode||'固定單價')+'</td>'
+    + '<td><input data-field="price" type="number" min="0" value="'+(Number(it.price)||0)+'" style="width:78px"></td>'
+    + '<td><input data-field="minAmount" type="number" min="0" value="'+(Number(it.minAmount)||0)+'" style="width:78px"></td>'
+    + '<td><input data-field="unit" value="'+escHtml(it.unit||'')+'" style="width:56px"></td>'
+    + '<td><input data-field="limit" type="number" min="0" value="'+(Number(it.limit)||0)+'" style="width:68px"></td>'
+    + '<td><input data-field="sort" type="number" value="'+(Number(it.sort)||0)+'" style="width:58px"></td>'
+    + '<td><input data-field="session" value="'+escHtml(it.session||'')+'" style="width:78px"></td>'
+    + '<td style="text-align:center"><input data-field="enabled" type="checkbox"'+(it.enabled!==false?' checked':'')+'></td>'
+    + '<td><button class="btn" type="button" onclick="saveItemRow(this)">💾 儲存</button></td>'
+    + '</tr>';
+}
+function renderItemsTable(items){
+  $('itemsHead').innerHTML = itemHead();
+  $('itemsBody').innerHTML = (items||[]).map(itemRowHtml).join('');
+}
+function addItemRow(){
+  if(!$('itemsHead').innerHTML) $('itemsHead').innerHTML = itemHead();
+  $('itemsBody').insertAdjacentHTML('afterbegin', itemRowHtml({ enabled:true, pricingMode:'固定單價', unit:'份' }));
+  itemsMsg('已新增一列空白品項，填好後按「💾 儲存」');
+}
+function readItemRow(tr){
+  var get=function(f){ return tr.querySelector('[data-field="'+f+'"]'); };
+  return {
+    name: get('name').value.trim(),
+    pricingMode: get('pricingMode').value,
+    price: Number(get('price').value)||0,
+    minAmount: Number(get('minAmount').value)||0,
+    unit: get('unit').value.trim(),
+    limit: Number(get('limit').value)||0,
+    sort: Number(get('sort').value)||0,
+    session: get('session').value.trim(),
+    enabled: get('enabled').checked
+  };
+}
+function saveItemRow(btn){
+  var tr = btn.closest('tr');
+  var pid = tr.getAttribute('data-pageid')||'';
+  var fields = readItemRow(tr);
+  if(!fields.name){ itemsMsg('品項名稱必填', true); return; }
+  btn.disabled=true; var old=btn.textContent; btn.textContent='⏳ 儲存中…';
+  var cb = function(r){
+    btn.disabled=false; btn.textContent=old;
+    if(!r || !r.ok){ itemsMsg((r&&r.error)||'儲存失敗', true); return; }
+    itemsMsg('已儲存「'+fields.name+'」，重新讀取…');
+    loadItems();
+  };
+  var fail = function(e){ btn.disabled=false; btn.textContent=old; itemsMsg('儲存失敗：'+e.message, true); };
+  if(pid){ google.script.run.withSuccessHandler(cb).withFailureHandler(fail).itemUpdateApi(AUTH, pid, fields); }
+  else   { google.script.run.withSuccessHandler(cb).withFailureHandler(fail).itemCreateApi(AUTH, fields); }
 }
 
 // ── 採購數量彙總（畫面與 Excel 共用，避免兩邊各算各的漂移）；list＝要統計的資料列 ──
 function computeBuy(list){
   list = (list || []).filter(isActive);
-  var goods = (CFG.QTY_ITEMS || []).filter(function(it){ var m = it.pricingMode || 'fixed'; return m === 'fixed' || m === 'free'; });
-  var moneyItems = (CFG.QTY_ITEMS || []).filter(function(it){ return it.pricingMode === 'donation' || it.pricingMode === 'minimum'; });
+  var goods = ITEMS_LIVE.filter(function(it){ var m = it.pricingMode || 'fixed'; return m === 'fixed' || m === 'free'; });
+  var moneyItems = ITEMS_LIVE.filter(function(it){ return it.pricingMode === 'donation' || it.pricingMode === 'minimum'; });
   var goodsRows = goods.map(function(it){
     var mode = it.pricingMode || 'fixed';
     var qty = list.reduce(function(s,r){ return s + (Number(r[it.id]) || 0); }, 0);
@@ -372,7 +470,7 @@ function rowHtml(r,C,extraClass){
     if (c === '個資同意') return '<td>' + (r['個資同意']===true?'✅':'—') + '</td>';
     if (c === '總金額') return '<td>' + money(calcTotal(r)) + '</td>';
     if (c === '匯款金額') return '<td>' + money(r[c]) + '</td>';
-    var itemDef = (CFG.QTY_ITEMS||[]).filter(function(it){return it.id===c;})[0];
+    var itemDef = ITEMS_LIVE.filter(function(it){return it.id===c;})[0];
     if (itemDef && (itemDef.pricingMode==='donation'||itemDef.pricingMode==='minimum')) return '<td>NT$ '+money(r[c])+'</td>';
     if (c === '報名時間' || c === '取消時間') return '<td>' + fmtDate(r[c]) + '</td>';
     var customDef = CUSTOM_FIELDS.filter(function(f){return f.name===c;})[0];
@@ -476,7 +574,7 @@ function openModal(pageId){
     else if (f.type === 'date') h += fldDate(f.name, r[f.name]||'');
     else h += fld(f.name, r[f.name]||'');
   });
-  ITEM_IDS.forEach(function(id){ var it=(CFG.QTY_ITEMS||[]).filter(function(x){return x.id===id;})[0]; h += fldNum(id+(it&&(it.pricingMode==='donation'||it.pricingMode==='minimum')?'（金額）':''), r[id], id); });
+  ITEM_IDS.forEach(function(id){ var it=ITEMS_LIVE.filter(function(x){return x.id===id;})[0]; h += fldNum(id+(it&&(it.pricingMode==='donation'||it.pricingMode==='minimum')?'（金額）':''), r[id], id); });
   h += sel('繳款方式', PAY_OPTIONS, r['繳款方式'], L.PAYMENT);
   h += '<div class="mrow"><div>'+fld('匯款日期', r['匯款日期']||'')+'</div><div>'+fld('帳號後五碼', r['帳號後五碼']||'')+'</div></div>';
   h += fldNum('匯款金額', r['匯款金額']);
@@ -521,7 +619,7 @@ function receiptRowsFor(pageId){
 function receiptItemLines(rows){
   var lines = [];
   rows.forEach(function(r){
-    (CFG.QTY_ITEMS||[]).forEach(function(it){
+    ITEMS_LIVE.forEach(function(it){
       var value = Number(r[it.id]) || 0;
       if (value <= 0) return;
       var mode = it.pricingMode || 'fixed';
@@ -580,7 +678,7 @@ function saveModal(){
   });
   // 重算總金額
   var tot = 0;
-  ITEM_IDS.forEach(function(id){ var it=(CFG.QTY_ITEMS||[]).filter(function(x){return x.id===id;})[0],v=parseInt(fields[id],10)||0; tot += it&&(!it.pricingMode||it.pricingMode==='fixed') ? v*(it.price||0) : (it&&(it.pricingMode==='donation'||it.pricingMode==='minimum')?v:0); });
+  ITEM_IDS.forEach(function(id){ var it=ITEMS_LIVE.filter(function(x){return x.id===id;})[0],v=parseInt(fields[id],10)||0; tot += it&&(!it.pricingMode||it.pricingMode==='fixed') ? v*(it.price||0) : (it&&(it.pricingMode==='donation'||it.pricingMode==='minimum')?v:0); });
   fields['總金額'] = tot;
   if (fields['備註'] && String(fields['備註']).length > 2000) {
     alert('備註過長（' + String(fields['備註']).length + ' 字），請縮短至 2000 字以內');

@@ -74,7 +74,7 @@ textarea{min-height:56px;resize:vertical}
 <body class="layout-{{HEADER_LAYOUT}} shadow-{{CARD_SHADOW}}">
 <div class="page-layout">
   <aside class="side">
-    <div class="hero-visual"><div class="lamp" id="lamp"><img src="{{DEFAULT_HERO_IMAGE}}" alt="晨光山巒中的宮廟"></div></div>
+    <div class="hero-visual"><div class="lamp" id="lamp"><img src="{{DEFAULT_HERO_IMAGE}}" alt="活動封面主視覺"></div></div>
     <div class="head"><div class="head-copy"><h1 id="title"></h1><div class="meta" id="metaLine"></div></div></div>
     <div class="card" id="descCard" style="display:none"><h2>活動介紹</h2><div id="descLine" style="white-space:pre-wrap;line-height:1.7"></div></div>
   </aside>
@@ -159,6 +159,8 @@ textarea{min-height:56px;resize:vertical}
 {{CFG_INJECT}}
 
 var MODE = CFG.REGISTRATION_MODE === 'family' ? 'family' : 'single';
+// 三層：品項以商品檔為即時真值，載入時用 itemsLoadApi() 覆寫；查不到才用 CONFIG 快照。
+var ITEMS = (CFG.QTY_ITEMS || []).slice();
 var QTY = {};   // 單人模式：itemId -> qty
 var FAMILY = []; // 家庭模式：[{ key, qty, root }]
 var NEXT_PERSON_KEY = 1;
@@ -184,7 +186,7 @@ if (CFG.EVENT_DESC) { $('descLine').textContent = CFG.EVENT_DESC; $('descCard').
 if (CFG.NOTIFY_ON) $('emailWrap').style.display = 'block';
 if (CFG.WEB_APP_URL) $('lookupLink').href = String(CFG.WEB_APP_URL) + '?page=lookup';
 else $('lookupLink').style.display = 'none';
-// 活動另有自訂主圖時覆蓋預設宮廟封面。
+// 活動另有自訂主圖時覆蓋預設封面。
 if (CFG.LOGO) { var lg = $('lamp'); if (lg) { lg.classList.add('custom'); var im = lg.querySelector('img'); im.src = CFG.LOGO; im.alt = CFG.EVENT_NAME || '活動主圖'; } }
 
 // 手機首屏顯示報名入口，捲到表單後收起。
@@ -235,17 +237,17 @@ function readCustomPayload(){
 
 function qtyTotal(qty){
   var t = 0;
-  (CFG.QTY_ITEMS || []).forEach(function(it){
+  ITEMS.forEach(function(it){
     var v = Number(qty[it.id] || 0);
     if (!it.pricingMode || it.pricingMode === 'fixed') t += v * Number(it.price || 0);
     else if (it.pricingMode === 'donation' || it.pricingMode === 'minimum') t += v;
   });
   return t;
 }
-function qtySelected(qty){ return (CFG.QTY_ITEMS || []).some(function(it){ return Number(qty[it.id] || 0) > 0; }); }
+function qtySelected(qty){ return ITEMS.some(function(it){ return Number(qty[it.id] || 0) > 0; }); }
 
 function buildSteppers(host, qty){
-  (CFG.QTY_ITEMS || []).forEach(function(it){
+  ITEMS.forEach(function(it){
     qty[it.id] = 0;
     var div = document.createElement('div');
     div.className = 'item';
@@ -336,17 +338,36 @@ function recalc(){
   });
 }
 
-if (MODE === 'family') {
-  $('singleNameWrap').style.display = 'none';
-  $('familyContactWrap').style.display = 'block';
-  $('singleItemsWrap').style.display = 'none';
-  $('familyItemsWrap').style.display = 'block';
-  $('itemsTitle').textContent = L.PERSON + '與' + L.ITEMS;
-  addPerson();
-  $('btnAddPerson').onclick = addPerson;
-} else {
-  buildSteppers($('items'), QTY);
+// 依目前 ITEMS 渲染品項卡；商品檔即時覆寫 ITEMS 後再呼叫一次即可重繪。
+function renderItems(){
+  if (MODE === 'family') {
+    $('singleNameWrap').style.display = 'none';
+    $('familyContactWrap').style.display = 'block';
+    $('singleItemsWrap').style.display = 'none';
+    $('familyItemsWrap').style.display = 'block';
+    $('itemsTitle').textContent = L.PERSON + '與' + L.ITEMS;
+    FAMILY = []; NEXT_PERSON_KEY = 1;
+    $('familyPeople').innerHTML = '';
+    addPerson();
+    $('btnAddPerson').onclick = addPerson;
+  } else {
+    QTY = {};
+    $('items').innerHTML = '';
+    buildSteppers($('items'), QTY);
+  }
+  recalc();
 }
+
+// 先用快照渲染（本機預覽、google.script.run 不可用時仍可操作），再即時向商品檔要最新品項。
+renderItems();
+(function loadItems(){
+  if (typeof google === 'undefined' || !google.script || !google.script.run) return;
+  google.script.run.withSuccessHandler(function(r){
+    if (!r || !r.ok || !r.items || !r.items.length) return; // 查失敗／空 → 保留快照
+    ITEMS = r.items;
+    renderItems();
+  }).withFailureHandler(function(){ /* 失敗退回快照，不動畫面 */ }).itemsLoadApi();
+})();
 
 // 繳款方式由 Config.gs 單一來源提供
 var PAY_OPTIONS = CFG.PAY_OPTIONS || [];
@@ -379,16 +400,16 @@ $('btnSubmit').onclick = function(){
       if (!personName) return fail('請填第 ' + (pi + 1) + ' 位' + L.PERSON + '姓名');
       if (!qtySelected(FAMILY[pi].qty)) return fail(personName + ' 請至少選一項品項');
       var minErr = '';
-      (CFG.QTY_ITEMS||[]).forEach(function(it){var v=Number(FAMILY[pi].qty[it.id]||0);if(!minErr&&it.pricingMode==='minimum'&&v>0&&v<it.minAmount)minErr=it.id+' 最低金額為 '+money(it.minAmount);});
+      ITEMS.forEach(function(it){var v=Number(FAMILY[pi].qty[it.id]||0);if(!minErr&&it.pricingMode==='minimum'&&v>0&&v<it.minAmount)minErr=it.id+' 最低金額為 '+money(it.minAmount);});
       if(minErr)return fail(minErr);
       var personData = { '功德主': personName };
-      (CFG.QTY_ITEMS || []).forEach(function(it){ personData[it.id] = FAMILY[pi].qty[it.id] || 0; });
+      ITEMS.forEach(function(it){ personData[it.id] = FAMILY[pi].qty[it.id] || 0; });
       people.push(personData);
     }
   }
   if (MODE !== 'family' && !qtySelected(QTY)){ return fail('請至少選一項品項'); }
   var singleMinErr='';
-  if(MODE!=='family')(CFG.QTY_ITEMS||[]).forEach(function(it){var v=Number(QTY[it.id]||0);if(!singleMinErr&&it.pricingMode==='minimum'&&v>0&&v<it.minAmount)singleMinErr=it.id+' 最低金額為 '+money(it.minAmount);});
+  if(MODE!=='family')ITEMS.forEach(function(it){var v=Number(QTY[it.id]||0);if(!singleMinErr&&it.pricingMode==='minimum'&&v>0&&v<it.minAmount)singleMinErr=it.id+' 最低金額為 '+money(it.minAmount);});
   if(singleMinErr)return fail(singleMinErr);
   var capacityError = checkCapacity(); if (capacityError) return fail(capacityError);
   if (!PAY){ return fail('請選擇' + L.PAYMENT); }
@@ -427,16 +448,17 @@ $('btnSubmit').onclick = function(){
     payload['功德主清單'] = people;
   } else {
     payload['功德主'] = name;
-    (CFG.QTY_ITEMS || []).forEach(function(it){ payload[it.id] = QTY[it.id] || 0; });
+    ITEMS.forEach(function(it){ payload[it.id] = QTY[it.id] || 0; });
   }
   if (CFG.GROUP_FIELD && CFG.GROUP_OPTIONS && CFG.GROUP_OPTIONS.length) payload[CFG.GROUP_FIELD] = $('f_group').value;
   Object.keys(custom.values).forEach(function(k){ payload[k] = custom.values[k]; });
 
   PENDING_PAYLOAD = payload;
-  $('confirmName').textContent = '報名：' + name + ' - ' + ((CFG.GROUP_FIELD && $('f_group').value) || '未填院別');
+  var confirmGroup = (CFG.GROUP_FIELD && $('f_group').value) ? $('f_group').value : '';
+  $('confirmName').textContent = '報名：' + name + (confirmGroup ? ' - ' + confirmGroup : '');
   var rows = [];
   function addRows(qty, who){
-    (CFG.QTY_ITEMS || []).forEach(function(it){
+    ITEMS.forEach(function(it){
       var v = Number(qty[it.id] || 0);
       if (!v) return;
       var amountMode = it.pricingMode === 'donation' || it.pricingMode === 'minimum';
@@ -508,7 +530,7 @@ function loadCapacity(){
     CAPACITY_STATE = r;
     var parts = [];
     if (r.totalRemaining != null) parts.push('總名額剩餘 '+r.totalRemaining+' 人');
-    (CFG.QTY_ITEMS||[]).forEach(function(it){ if(r.itemRemaining[it.id]!=null) parts.push(it.id+'剩餘 '+r.itemRemaining[it.id]+' '+(it.unit||'份')); });
+    ITEMS.forEach(function(it){ if(r.itemRemaining[it.id]!=null) parts.push(it.id+'剩餘 '+r.itemRemaining[it.id]+' '+(it.unit||'份')); });
     $('capacityBox').textContent = parts.join('｜');
     if (r.totalRemaining === 0) { $('btnSubmit').disabled=true; $('btnSubmit').textContent='名額已滿'; }
   }).withFailureHandler(function(){ $('capacityBox').textContent='剩餘名額暫時無法讀取'; }).capacityLoadApi();

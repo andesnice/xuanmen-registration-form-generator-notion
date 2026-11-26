@@ -153,7 +153,7 @@ button.hero-link{font:inherit;cursor:pointer}
 <body>
 <div class="wrap">
   <header class="hero">
-    <div class="hero-art"><img src="<?!= HERO_IMAGE_DATA ?>" alt="晨光山巒中的宮廟"></div>
+    <div class="hero-art"><img src="<?!= HERO_IMAGE_DATA ?>" alt="活動封面主視覺"></div>
     <div class="hero-content">
     <div class="eyebrow">活動報名・私人工作台</div>
     <h1>通用活動報名表產生器</h1>
@@ -219,7 +219,7 @@ button.hero-link{font:inherit;cursor:pointer}
       <div class="hint" id="eventDescHelp">支援換行，最多 1000 字。<span id="eventDescCount">0 / 1000</span></div>
     </div>
     <div style="margin-top:10px">
-      <label for="logoFile">活動主圖／Logo（留空使用預設宮廟封面）</label>
+      <label for="logoFile">活動主圖／Logo（留空使用預設封面）</label>
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <input type="file" id="logoFile" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" onchange="onLogoPick(this)">
         <span id="logoPreview" style="display:none;align-items:center;gap:8px">
@@ -445,7 +445,7 @@ button.hero-link{font:inherit;cursor:pointer}
       <div class="btnbar" style="margin-bottom:10px"><button class="ghost" type="button" onclick="setPreviewDevice('phone')">手機</button><button class="ghost" type="button" onclick="setPreviewDevice('desktop')">桌面</button></div>
       <div class="hint" style="margin-bottom:10px">桌機左側顯示主圖與宣傳、右側顯示填單；手機上下排列。標題、色彩、圖片與品項會同步更新。</div>
       <div class="pv-stage"><div id="pv" class="pv phone layout-centered shadow-soft">
-        <div class="pv-layout"><div class="pv-side"><div class="pv-visual"><div class="pv-lamp" id="pvLamp"><img src="<?!= HERO_IMAGE_DATA ?>" alt="預設宮廟封面"></div></div><div class="pv-head">
+        <div class="pv-layout"><div class="pv-side"><div class="pv-visual"><div class="pv-lamp" id="pvLamp"><img src="<?!= HERO_IMAGE_DATA ?>" alt="預設封面"></div></div><div class="pv-head">
         <div class="pv-title" id="pvTitle">活動報名</div>
         <div class="pv-meta" id="pvMeta"></div>
         </div><div class="pv-box pv-desc" id="pvDesc" style="white-space:pre-wrap;font-size:12px;color:#6b5d44;line-height:1.5"></div></div>
@@ -505,7 +505,10 @@ button.hero-link{font:inherit;cursor:pointer}
 <script>
 var RESERVED_FIELDS = <?!= JSON.stringify(GEN.RESERVED_FIELDS) ?>;
 var PUBLIC_MODE = <?!= JSON.stringify(GEN.PUBLIC_MODE) ?>;
-var DB_ID = '';
+var DB_ID = '';          // 向後相容＝訂單主檔 ID
+var ORDER_DB_ID = '';    // 訂單主檔
+var DETAIL_DB_ID = '';   // 訂單項目交易明細
+var ITEM_DB_ID = '';     // 項目設定檔（商品檔）
 var DB_SCHEMA_KEY = '';
 var SCHEMA_LOCKED = false;
 var PRESETS = [];
@@ -564,7 +567,7 @@ function renderPreview(){
   var pvImage = pvLamp.querySelector('img');
   if (!pvLamp.dataset.defaultSrc) pvLamp.dataset.defaultSrc = pvImage.src;
   pvImage.src = LOGO_DATA || pvLamp.dataset.defaultSrc;
-  pvImage.alt = LOGO_DATA ? '活動自訂主圖' : '預設宮廟封面';
+  pvImage.alt = LOGO_DATA ? '活動自訂主圖' : '預設封面';
   pvLamp.classList.toggle('custom', !!LOGO_DATA);
   var items = readItems(), html = '', total = 0;
   if(!items.length){
@@ -1125,7 +1128,10 @@ function createDb(){
   show('dbStatus','info',parentMode==='activity_database'?'建立中…新增活動紀錄與報名資料庫':'建立中…呼叫 Notion API');
   google.script.run.withSuccessHandler(function(r){
     if(r && r.ok){
-      DB_ID = r.dbId;
+      DB_ID = r.orderDbId || r.dbId;
+      ORDER_DB_ID = r.orderDbId || r.dbId;
+      DETAIL_DB_ID = r.detailDbId || '';
+      ITEM_DB_ID = r.itemDbId || '';
       DB_SCHEMA_KEY = r.schemaKey || '';
       lockSchema();
       document.getElementById('parentMode').disabled = true;
@@ -1137,8 +1143,12 @@ function createDb(){
       var lines=['✅ Notion DB 建立成功'];
       if(r.activityPageId) lines.push('活動頁面 ID：'+r.activityPageId);
       if(r.activityPageUrl) lines.push('活動頁面：'+r.activityPageUrl);
-      lines.push('報名 DB ID：'+r.dbId);
-      if(r.url) lines.push('報名 DB：'+r.url);
+      lines.push('訂單主檔 DB ID：'+(r.orderDbId||r.dbId));
+      if(r.url) lines.push('訂單主檔 DB：'+r.url);
+      if(r.detailDbId) lines.push('交易明細 DB ID：'+r.detailDbId);
+      if(r.detailUrl) lines.push('交易明細 DB：'+r.detailUrl);
+      if(r.itemDbId) lines.push('商品檔 DB ID：'+r.itemDbId);
+      if(r.itemUrl) lines.push('商品檔 DB：'+r.itemUrl);
       if(r.warning) lines.push('⚠️ '+r.warning);
       if(r.usageLogWarning) lines.push('⚠️ 使用紀錄未寫入：'+r.usageLogWarning);
       show('dbStatus',r.warning?'info':'ok',lines.join('\n'));
@@ -1156,6 +1166,9 @@ function gen(){
   var p = basePayload();
   p.token = val('token');
   p.dbId = DB_ID;
+  p.orderDbId = ORDER_DB_ID;
+  p.detailDbId = DETAIL_DB_ID;
+  p.itemDbId = ITEM_DB_ID;
   p.dbSchemaKey = DB_SCHEMA_KEY;
   p.logo = LOGO_DATA;  // 只在產出時帶（不進 preset，避免範本超過 7000 字上限）
   var invalid = validatePayload(p);

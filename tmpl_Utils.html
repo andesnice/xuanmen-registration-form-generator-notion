@@ -140,6 +140,8 @@ function pSel_(v)  { v = String(v == null ? '' : v).trim(); return v ? { select:
 function pChk_(v)  { return { checkbox: chkTrue(v) }; }
 function pPhone_(v){ v = String(v == null ? '' : v).trim(); return { phone_number: v || null }; }
 function pDate_(v) { v = String(v == null ? '' : v).trim(); return { date: v ? { start: v } : null }; }
+// 三層模型：relation 欄位。傳入目標頁 ID（32 碼或含連字號皆可）；空值回空陣列（清空關聯）。
+function pRel_(id) { id = String(id == null ? '' : id).trim(); return { relation: id ? [{ id: id }] : [] }; }
 
 // ── 讀取 Notion：從 property 物件取出純值 ────────────────────
 function gTitle_(x) { return (x && x.title && x.title[0]) ? x.title[0].plain_text : ''; }
@@ -149,3 +151,5 @@ function gSel_(x)   { return (x && x.select) ? x.select.name : ''; }
 function gPhone_(x) { return (x && x.phone_number) ? x.phone_number : ''; }
 function gDate_(x)  { return (x && x.date) ? x.date.start : ''; }
 function gChk_(x)   { return (x && typeof x.checkbox === 'boolean') ? x.checkbox : false; }
+// relation：回傳第一個關聯頁 ID（三層 join 用）；無關聯回 ''。
+function gRel_(x)   { return (x && x.relation && x.relation[0]) ? x.relation[0].id : ''; }

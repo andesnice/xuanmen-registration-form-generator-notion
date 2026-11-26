@@ -11,7 +11,7 @@
 // ═══════════════════════════════════════════════════════════
 
 var GEN = {
-  SCHEMA_VERSION: 3,
+  SCHEMA_VERSION: 4, // v4：改為三層資料模型（訂單主檔 ← 交易明細 → 項目設定檔）
   PUBLIC_MODE: true,
   BANK: { bank: '', acct: '', name: '' },
   PAY_OPTIONS: ['現金', '匯款', '刷卡', 'LinePay'],
@@ -74,9 +74,15 @@ function createDbCore_(p) {
   if (!isNotionId_(targetId)) return { ok: false, error: parentMode === 'activity_database' ? '活動總資料庫 ID 格式不正確' : 'Notion 父頁面 ID 格式不正確' };
 
   if (parentMode === 'page') {
-    var directDb = createRegistrationDb_(notionToken, targetId, cfg);
-    if (!directDb.ok) return directDb;
-    return { ok: true, dbId: directDb.data.id, url: directDb.data.url || '', schemaKey: schemaKey_(cfg), parentMode: parentMode };
+    var tier = createThreeTierDbs_(notionToken, targetId, cfg);
+    if (!tier.ok) return tier;
+    return {
+      ok: true,
+      dbId: tier.orderDbId, // 向後相容：主檔 ID
+      orderDbId: tier.orderDbId, detailDbId: tier.detailDbId, itemDbId: tier.itemDbId,
+      url: tier.orderUrl, detailUrl: tier.detailUrl, itemUrl: tier.itemUrl,
+      schemaKey: schemaKey_(cfg), parentMode: parentMode, warning: tier.warning || ''
+    };
   }
 
   var parentDb = notionRequest_(notionToken, 'get', '/databases/' + targetId);
@@ -98,21 +104,85 @@ function createDbCore_(p) {
   });
   if (!activityPage.ok) return { ok: false, error: '建立活動紀錄失敗：' + activityPage.error };
 
-  var childDb = createRegistrationDb_(notionToken, activityPage.data.id, cfg);
-  if (!childDb.ok) return { ok: false, error: '活動紀錄已建立，但報名資料庫建立失敗：' + childDb.error + (activityPage.data.url ? '\n活動頁面：' + activityPage.data.url : '') };
+  var childTier = createThreeTierDbs_(notionToken, activityPage.data.id, cfg);
+  if (!childTier.ok) return { ok: false, error: '活動紀錄已建立，但三層資料庫建立失敗：' + childTier.error + (activityPage.data.url ? '\n活動頁面：' + activityPage.data.url : '') };
 
-  var idProp = { '報名資料庫 ID': { rich_text: [{ type: 'text', text: { content: childDb.data.id } }] } };
+  // 活動總資料庫的「報名資料庫 ID」欄回填主檔 ID（主檔＝對外報名的主要 DB）
+  var idProp = { '報名資料庫 ID': { rich_text: [{ type: 'text', text: { content: childTier.orderDbId } }] } };
   var writeBack = notionRequest_(notionToken, 'patch', '/pages/' + activityPage.data.id, { properties: idProp });
   return {
     ok: true,
-    dbId: childDb.data.id,
-    url: childDb.data.url || '',
+    dbId: childTier.orderDbId,
+    orderDbId: childTier.orderDbId, detailDbId: childTier.detailDbId, itemDbId: childTier.itemDbId,
+    url: childTier.orderUrl, detailUrl: childTier.detailUrl, itemUrl: childTier.itemUrl,
     activityPageId: activityPage.data.id,
     activityPageUrl: activityPage.data.url || '',
     schemaKey: schemaKey_(cfg),
     parentMode: parentMode,
-    warning: writeBack.ok ? '' : '報名資料庫已建立，但 ID 回填失敗：' + writeBack.error
+    warning: [childTier.warning, writeBack.ok ? '' : '三層資料庫已建立，但主檔 ID 回填活動頁失敗：' + writeBack.error].filter(function (s) { return s; }).join('\n')
   };
+}
+
+// 建立三層資料庫並把初始品項寫進商品檔。
+// 順序：① 商品檔（項目設定檔）② 訂單主檔 ③ 交易明細（relation 連回前兩者），最後 seed 商品檔。
+// 任一張 DB 建立失敗即回失敗（不留半套）；品項 seed 失敗只回 warning（DB 已建，品項可手動補）。
+function createThreeTierDbs_(token, parentPageId, cfg) {
+  var prefix = cfg.ORG_NAME + '－' + cfg.EVENT_NAME;
+
+  var itemDb = notionRequest_(token, 'post', '/databases', {
+    parent: { type: 'page_id', page_id: parentPageId },
+    title: [{ type: 'text', text: { content: prefix + ' 商品檔' } }],
+    properties: buildItemDbProps_(cfg)
+  });
+  if (!itemDb.ok) return { ok: false, error: '商品檔建立失敗：' + itemDb.error };
+
+  var orderDb = notionRequest_(token, 'post', '/databases', {
+    parent: { type: 'page_id', page_id: parentPageId },
+    title: [{ type: 'text', text: { content: prefix + ' 報名（訂單主檔）' } }],
+    properties: buildOrderDbProps_(cfg)
+  });
+  if (!orderDb.ok) return { ok: false, error: '訂單主檔建立失敗（商品檔已建 ' + itemDb.data.id + '）：' + orderDb.error };
+
+  var detailDb = notionRequest_(token, 'post', '/databases', {
+    parent: { type: 'page_id', page_id: parentPageId },
+    title: [{ type: 'text', text: { content: prefix + ' 交易明細' } }],
+    properties: buildDetailDbProps_(cfg, orderDb.data.id, itemDb.data.id)
+  });
+  if (!detailDb.ok) return { ok: false, error: '交易明細建立失敗（商品檔 ' + itemDb.data.id + '、主檔 ' + orderDb.data.id + ' 已建）：' + detailDb.error };
+
+  var seed = seedItems_(token, itemDb.data.id, cfg.items);
+
+  return {
+    ok: true,
+    orderDbId: orderDb.data.id, detailDbId: detailDb.data.id, itemDbId: itemDb.data.id,
+    orderUrl: orderDb.data.url || '', detailUrl: detailDb.data.url || '', itemUrl: itemDb.data.url || '',
+    warning: seed.ok ? '' : ('部分初始品項未寫進商品檔（' + seed.error + '），可到商品檔手動補列')
+  };
+}
+
+// 把 cfg.items 寫進商品檔（項目設定檔）；一列一個可選品項，啟用預設 true，排序照填寫順序。
+function seedItems_(token, itemDbId, items) {
+  var failed = [];
+  (items || []).forEach(function (it, idx) {
+    var props = {
+      '品項名稱': { title: [{ type: 'text', text: { content: it.name } }] },
+      '計價模式': { select: { name: pricingModeLabel_(it.pricingMode) } },
+      '單價': { number: Number(it.price) || 0 },
+      '最低金額': { number: Number(it.minAmount) || 0 },
+      '單位': { rich_text: [{ type: 'text', text: { content: String(it.unit || '份') } }] },
+      '數量上限': { number: Number(it.limit) || 0 },
+      '排序': { number: idx + 1 },
+      '啟用': { checkbox: true }
+    };
+    var res = notionRequest_(token, 'post', '/pages', { parent: { database_id: itemDbId }, properties: props });
+    if (!res.ok) failed.push(it.name);
+    Utilities.sleep(120); // 輕量節流，避免 429
+  });
+  return failed.length ? { ok: false, error: failed.join('、') } : { ok: true };
+}
+
+function pricingModeLabel_(mode) {
+  return { fixed: '固定單價', donation: '隨喜', free: '免費', minimum: '最低金額' }[String(mode)] || '固定單價';
 }
 
 // ── Notion 連線設定（Token 僅存伺服器端，不回傳前端）──────────
@@ -485,14 +555,6 @@ function checkFeedbackDatabase() {
   return message;
 }
 
-function createRegistrationDb_(token, parentPageId, cfg) {
-  return notionRequest_(token, 'post', '/databases', {
-    parent: { type: 'page_id', page_id: parentPageId },
-    title: [{ type: 'text', text: { content: cfg.ORG_NAME + '－' + cfg.EVENT_NAME + ' 報名' } }],
-    properties: buildDbProperties_(cfg)
-  });
-}
-
 function findTitleProperty_(properties) {
   var names = Object.keys(properties || {});
   for (var i = 0; i < names.length; i++) {
@@ -608,7 +670,8 @@ function deletePresetApi(name) {
 }
 
 // ── Notion DB properties（建表用）────────────────────────────
-function buildDbProperties_(p) {
+// ── DB1 訂單主檔：一列＝一張報名單。總金額是唯一財務真值，品項不再是欄位（移到交易明細）。
+function buildOrderDbProps_(p) {
   var props = {
     '功德主': { title: {} },
     '電話': { phone_number: {} },
@@ -637,10 +700,7 @@ function buildDbProperties_(p) {
   if (p.hasGroup) {
     props[p.groupField] = { select: { options: p.groupOptions.map(nameOpt_) } };
   }
-  (p.items || []).forEach(function (it) {
-    var name = String(it.name || '').trim();
-    if (name) props[name] = { number: {} };
-  });
+  // ⚠️ 三層模型：品項不再在主檔開 Number 欄（移到交易明細）。自訂欄位仍屬整張訂單，留在主檔。
   (p.customFields || []).forEach(function (f) {
     if (f.type === 'select') props[f.name] = { select: { options: f.options.map(nameOpt_) } };
     else if (f.type === 'checkbox') props[f.name] = { checkbox: {} };
@@ -648,6 +708,38 @@ function buildDbProperties_(p) {
     else props[f.name] = { rich_text: {} };
   });
   return props;
+}
+
+// ── DB3 項目設定檔（商品檔）：一列＝一個可選商品。新增商品＝在這張加一列。
+function buildItemDbProps_(p) {
+  return {
+    '品項名稱': { title: {} },
+    '計價模式': { select: { options: ['固定單價', '隨喜', '免費', '最低金額'].map(nameOpt_) } },
+    '單價': { number: {} },
+    '最低金額': { number: {} },
+    '單位': { rich_text: {} },
+    '數量上限': { number: {} }, // 0＝不限
+    '排序': { number: {} },
+    '場次': { select: { options: [] } }, // 先留空，依活動需要再加選項
+    '啟用': { checkbox: {} }, // 取消勾選＝報名表不顯示此商品
+    '備註': { rich_text: {} }
+  };
+}
+
+// ── DB2 交易明細：一列＝一張訂單選到的一個商品，relation 同時連回主檔與商品檔。
+function buildDetailDbProps_(p, orderDbId, itemDbId) {
+  return {
+    '明細': { title: {} }, // 顯示用：訂單編號－品項名稱
+    '訂單': { relation: { database_id: orderDbId, type: 'single_property', single_property: {} } },
+    '商品': { relation: { database_id: itemDbId, type: 'single_property', single_property: {} } },
+    '訂單編號': { rich_text: {} }, // 合併鍵＋對帳碼（主檔同值）
+    '品項名稱': { rich_text: {} }, // 快照，避免商品改名後舊明細對不上
+    '計價模式': { rich_text: {} }, // 快照
+    '單價快照': { number: {} }, // 下單當下單價，之後商品改價不影響舊單
+    '數量': { number: {} },
+    '小計': { number: {} },
+    '狀態': { select: { options: GEN.REG_STATUS.map(nameOpt_) } } // 有效／已取消，與主檔連動
+  };
 }
 function nameOpt_(n) { return { name: String(n) }; }
 
@@ -743,7 +835,10 @@ function normalizeCfg_(p) {
     REMIT_DEADLINE: String(p.remitDeadline || '').trim(),
     CLOSED_MSG: String(p.closedMsg || ('本次' + (p.eventName || '活動') + '報名已截止，<br>感謝您的參與。')).trim(),
     REPORT_PASSWORD: String(p.reportPassword || '').trim(),
-    dbId: String(p.dbId || '').trim(),
+    dbId: String(p.dbId || p.orderDbId || '').trim(), // 向後相容：主檔 ID
+    orderDbId: String(p.orderDbId || p.dbId || '').trim(),
+    detailDbId: String(p.detailDbId || '').trim(),
+    itemDbId: String(p.itemDbId || '').trim(),
     registrationMode: registrationMode,
     payOptions: payOptions,
     totalCapacity: Math.max(0, parseInt(p.totalCapacity, 10) || 0),
@@ -815,7 +910,12 @@ function validateCfg_(cfg, requireDb) {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emails[e].trim())) return '管理者 Email 格式不正確：' + emails[e];
     }
   }
-  if (requireDb && !/^(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/.test(cfg.dbId)) return 'Notion DB ID 格式不正確';
+  if (requireDb) {
+    var idRe = /^(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/;
+    if (!idRe.test(cfg.orderDbId)) return '訂單主檔 DB ID 格式不正確（請重新建立 Notion 三層資料庫）';
+    if (!idRe.test(cfg.detailDbId)) return '交易明細 DB ID 格式不正確（請重新建立 Notion 三層資料庫）';
+    if (!idRe.test(cfg.itemDbId)) return '商品檔 DB ID 格式不正確（請重新建立 Notion 三層資料庫）';
+  }
   return '';
 }
 
@@ -867,7 +967,10 @@ function buildFiles_(cfg) {
     CLOSED_MSG_JS: JSON.stringify(cfg.CLOSED_MSG),
     REPORT_PASSWORD_JS: JSON.stringify(cfg.REPORT_PASSWORD),
     NOTION_TOKEN_JS: JSON.stringify(cfg.NOTION_TOKEN || ''),
-    NOTION_DB_ID_JS: JSON.stringify(cfg.dbId || ''),
+    NOTION_DB_ID_JS: JSON.stringify(cfg.orderDbId || cfg.dbId || ''), // 向後相容：主檔 ID
+    NOTION_ORDER_DB_ID_JS: JSON.stringify(cfg.orderDbId || cfg.dbId || ''),
+    NOTION_DETAIL_DB_ID_JS: JSON.stringify(cfg.detailDbId || ''),
+    NOTION_ITEM_DB_ID_JS: JSON.stringify(cfg.itemDbId || ''),
     BANK_JS: JSON.stringify(cfg.BANK),
     REGISTRATION_MODE_JS: JSON.stringify(cfg.registrationMode),
     QTY_ITEMS_JS: itemsToJs_(cfg.items),
@@ -962,11 +1065,16 @@ function hasCapacity_(cfg) {
 
 // ── Notion 建表規格 + 專案 CLAUDE.md + 收尾清單 ──────────────
 function buildSchemaDoc_(cfg) {
-  var lines = ['# ' + cfg.EVENT_NAME + ' — Notion 建表規格', '',
-    'DB ID：`' + (cfg.dbId || '（尚未建，請用產生器建或手動建）') + '`', '',
+  var lines = ['# ' + cfg.EVENT_NAME + ' — Notion 建表規格（三層資料模型）', '',
+    '> 本版採 **訂單主檔 ← 訂單項目交易明細 → 項目設定檔（商品檔）** 三層模型。',
+    '> 產生器已自動建好三張 DB 並把初始品項寫進商品檔；下表是規格備份，手動重建或核對時用。',
+    '> 日後要新增／停用品項，直接在**商品檔**加列或把「啟用」取消勾選即可，報名表會即時反映，不必重新產出。', '',
+    '- **訂單主檔 DB ID**：`' + (cfg.orderDbId || cfg.dbId || '（尚未建）') + '`（對外報名的主要 DB，每列＝一筆報名訂單）',
+    '- **交易明細 DB ID**：`' + (cfg.detailDbId || '（尚未建）') + '`（每列＝一筆訂單裡選的一個品項）',
+    '- **商品檔 DB ID**：`' + (cfg.itemDbId || '（尚未建）') + '`（每列＝一個可選品項的設定）', '',
     '報名模式：`' + (cfg.registrationMode === 'family' ? '家庭代報' : '單人報名') + '`', '',
-    '> 此版採單一 data source 模型；請勿在同一 DB 新增第二個 data source。', '',
-    '## 固定欄', '',
+    '## ① 訂單主檔（固定欄）', '',
+    '> 財務真值＝`總金額`；每日關帳只查訂單主檔。品項明細不放這裡，放交易明細。', '',
     '| 欄位 | 型別 |', '|------|------|',
     '| 功德主 | title |', '| 報名編號 | rich_text |', '| 報名狀態 | select（有效／已取消） |', '| 取消時間 | date |', '| 電話 | phone_number |', '| 地址 | rich_text |'];
   if (cfg.registrationMode === 'family') {
@@ -980,13 +1088,38 @@ function buildSchemaDoc_(cfg) {
     '| 帳號後五碼 | **rich_text**（絕不可 number，會吃前導 0） |',
     '| 匯款金額 | number |',
     '| 確認匯款? | checkbox |', '| 稽核 | checkbox |', '| 個資同意 | checkbox |',
-    '| 備註 | rich_text |', '| 總金額 | number |', '| 報名時間 | date |',
+    '| 備註 | rich_text |', '| 總金額 | number（唯一財務真值；明細異動後回寫） |', '| 報名時間 | date |',
     '| Email | rich_text（報名確認信收件人；未啟用通知信時留空即可） |', '',
-    '## 品項欄（每項一個 Number）', '']);
+    '## ② 訂單項目交易明細', '',
+    '| 欄位 | 型別 |', '|------|------|',
+    '| 明細 | title |',
+    '| 訂單 | relation → 訂單主檔 |',
+    '| 商品 | relation → 商品檔 |',
+    '| 訂單編號 | rich_text（對應主檔報名編號，方便人工核對） |',
+    '| 品項名稱 | rich_text（下單當下快照，商品改名不影響歷史） |',
+    '| 計價模式 | rich_text（快照） |',
+    '| 單價快照 | number |',
+    '| 數量 | number |',
+    '| 小計 | number |',
+    '| 狀態 | select（有效／已取消） |', '',
+    '## ③ 項目設定檔（商品檔）', '',
+    '> 唯一可自行維護品項的地方：加列＝新增品項、取消勾「啟用」＝下架、改單價即改價。', '',
+    '| 欄位 | 型別 |', '|------|------|',
+    '| 品項名稱 | title |',
+    '| 計價模式 | select（固定單價／隨喜／免費／最低金額） |',
+    '| 單價 | number |',
+    '| 最低金額 | number |',
+    '| 單位 | rich_text |',
+    '| 數量上限 | number（0＝不限） |',
+    '| 排序 | number |',
+    '| 場次 | select |',
+    '| 啟用 | checkbox |',
+    '| 備註 | rich_text |', '',
+    '### 產生器已寫入商品檔的初始品項', '']);
   cfg.items.forEach(function (it) {
     var desc = it.pricingMode === 'free' ? '免費／數量' : (it.pricingMode === 'donation' ? '隨喜金額' :
       (it.pricingMode === 'minimum' ? '最低 ' + it.minAmount + ' 元' : it.price + ' 元／' + it.unit));
-    lines.push('- ' + it.name + '（' + desc + '）→ Number');
+    lines.push('- ' + it.name + '（' + desc + '，啟用）');
   });
   if (cfg.customFields.length) {
     lines.push('', '## 自訂欄位', '');
@@ -1020,7 +1153,7 @@ function buildProjectClaudeMd_(cfg) {
   return [
     '# ' + cfg.EVENT_NAME + ' — 專案備忘（開專案先讀）',
     '',
-    '由「通用活動報名表產生器」產出（數量×固定單價；' + (cfg.registrationMode === 'family' ? '家庭代報型' : '單人報名型') + '）。技術棧 GAS 直打 Notion（不經 n8n）。',
+    '由「通用活動報名表產生器」產出（三層資料模型；' + (cfg.registrationMode === 'family' ? '家庭代報型' : '單人報名型') + '）。技術棧 GAS 直打 Notion（不經 n8n）。',
     '',
     '- EVENT：`' + cfg.EVENT + '`',
     '- 主辦單位：`' + cfg.ORG_NAME + '`',
@@ -1028,12 +1161,17 @@ function buildProjectClaudeMd_(cfg) {
     '- 繳款方式：`' + cfg.payOptions.join('／') + '`',
     '- 總名額：`' + (cfg.totalCapacity || '不限') + '`',
     '- 自訂欄位：`' + (cfg.customFields.length ? cfg.customFields.map(function(f){return f.name;}).join('／') : '無') + '`',
-    '- Notion DB ID：`' + (cfg.dbId || '待建') + '`（存於 `Secrets.gs`，不注入前端）',
+    '- **資料模型＝三層**：訂單主檔 ← 訂單項目交易明細 → 項目設定檔（商品檔）',
+    '  - 訂單主檔 DB ID：`' + (cfg.orderDbId || cfg.dbId || '待建') + '`（對外報名主 DB；`總金額` 是唯一財務真值）',
+    '  - 交易明細 DB ID：`' + (cfg.detailDbId || '待建') + '`（一列＝一訂單選的一品項，relation 連回主檔與商品檔）',
+    '  - 商品檔 DB ID：`' + (cfg.itemDbId || '待建') + '`（一列＝一可選品項；**新增／下架品項改這裡**，報名表即時反映，不必重產）',
+    '  - 三個 ID 都存於 `Secrets.gs`，不注入前端',
     '- 資料流：`index/report` → `google.script.run` → 伺服器端 `Code.gs` → `UrlFetchApp` 直打 Notion API。**不經 n8n**。',
     '- Script ID / 部署 ID：**待 clasp 建立後補**（若切換 Google 帳號，每個帳號各有一組，保存在 `.deploy-accounts/`）',
-    '- 🔴 機密：`Secrets.gs` 放 Notion token 與 DB ID（純後端），`Config.gs` 放後台密碼；三者都只在伺服器端，index/report 前端一律不注入。',
+    '- 🔴 機密：`Secrets.gs` 放 Notion token 與三個 DB ID（純後端），`Config.gs` 放後台密碼；都只在伺服器端，index/report 前端一律不注入。',
     '',
-    '## 品項（固定單價，唯一來源＝Config.gs 的 QTY_ITEMS）',
+    '## 品項（唯一來源＝商品檔 DB，報名表讀「啟用=true」的列）',
+    '> 下列是產生器寫入的初始品項；之後加減品項請直接到商品檔 DB，不要改程式。',
     cfg.items.map(function (it) { return '- ' + it.name + '：' + (it.pricingMode === 'free' ? '免費' : (it.pricingMode === 'donation' ? '隨喜金額' : (it.pricingMode === 'minimum' ? '最低 ' + it.minAmount + ' 元' : it.price + ' 元／' + it.unit))); }).join('\n'),
     '',
     '## 三頁 / 開關',
@@ -1060,8 +1198,8 @@ function buildChecklist_(cfg) {
   return [
     '### 人工收尾清單',
     '1. **解壓**到你自己的活動專案資料夾。',
-    '2. **Notion**：DB 已由產生器建立（ID `' + (cfg.dbId || '待建') + '`）；沒建成就照 `Notion建表規格.md` 手動建、把 ID 填進 `Secrets.gs` 的 `NOTION_DB_ID_FALLBACK`。此版使用相容的單一 data source 模型，請勿在同一 DB 新增第二個 data source。**確認該 integration（token 對應的）已在此 DB 的 Connections 加入**，否則 GAS 打 Notion 會 401/404。',
-    '3. **機密（Secrets.gs）**：Notion token 與 DB ID 已由產生器內嵌進 `Secrets.gs`（純後端、不注入前端）。若沒填成或要換：改 `NOTION_TOKEN_FALLBACK` / `NOTION_DB_ID_FALLBACK` 後重新 push。要更嚴格（不把 token 寫在原始碼）→ 部署後在 GAS 編輯器執行一次 `setupSecrets()` 把值搬進 Script Properties，再清空兩個 FALLBACK 常數重新部署。',
+    '2. **Notion**：三張 DB 已由產生器建立（訂單主檔 `' + (cfg.orderDbId || cfg.dbId || '待建') + '`、交易明細 `' + (cfg.detailDbId || '待建') + '`、商品檔 `' + (cfg.itemDbId || '待建') + '`），初始品項也已寫進商品檔；沒建成就照 `Notion建表規格.md` 手動建三張、把三個 ID 填進 `Secrets.gs` 的 `NOTION_ORDER_DB_ID_FALLBACK`／`NOTION_DETAIL_DB_ID_FALLBACK`／`NOTION_ITEM_DB_ID_FALLBACK`。**確認該 integration（token 對應的）已在三張 DB 的 Connections 都加入**，否則 GAS 打 Notion 會 401/404。日後新增／下架品項：直接到商品檔加列或取消勾「啟用」，報名表即時反映，不必重產。',
+    '3. **機密（Secrets.gs）**：Notion token 與三個 DB ID 已由產生器內嵌進 `Secrets.gs`（純後端、不注入前端）。若沒填成或要換：改 `NOTION_TOKEN_FALLBACK`／三個 `*_DB_ID_FALLBACK` 後重新 push。要更嚴格（不把 token 寫在原始碼）→ 部署後在 GAS 編輯器執行一次 `setupSecrets()` 把值搬進 Script Properties，再清空四個 FALLBACK 常數重新部署。',
     '4. **GAS 部署（一鍵）**：解壓後**雙擊 `自動部署.bat`** → 選單選「首次建立並部署」；第一次會自動 `clasp create` + push + deploy 並記住部署 ID。要換 Google 帳號用選單第 2 項；每個帳號的 Script ID／部署 ID／網址會分開保存在 `.deploy-accounts/`，不會誤用上一個帳號。🔴 **每個新 Apps Script 專案首次部署後都必須授權一次**：開啟 `網址清單.txt` 內的編輯器網址，選 `authorizeApp` →「執行」→在細分授權畫面允許全部必要權限（尤其「連線至外部服務」）→回編輯器再執行一次，直到顯示「執行完畢」。母版已內建 `requireAllScopes`，不用再貼程式碼；同一專案日後重新部署通常不用重做。未授權時後台讀取 Notion 會失敗。報名／查詢修改／後台網址會顯示並存到 `報名表網址.txt`／`報名查詢網址.txt`／`後台網址.txt`／`網址清單.txt`；選單第 5 項可切換截止／重新開放。🔴 對外部署一律自己確認過再上。',
     '5. **驗收**：submit 落地並回傳報名編號／重複報名被阻擋／免費、隨喜、最低金額計算正確／`?page=lookup` 可用編號＋電話查詢修改／report 超過 100 筆仍全量（伺服器端自動翻頁）／後台需密碼才進得去／`?page=close`、`?page=lookup`、`?page=report` 皆 200。',
     '6. 測試資料姓名一律填「測試資料請刪」，測完刪列。'
